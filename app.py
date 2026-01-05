@@ -42,16 +42,19 @@ with col_right:
     if run_button and source_img:
         with st.spinner("生成中..."):
             try:
-                # 【最終決戦：物理的封鎖プロンプト】
+                # 【最終仕上げ：物理的口閉じ＋背景ボケ追加プロンプト】
                 prompt = (
-                    f"STRICT CONSTRAINTS (PRIORITY ONE): "
-                    f"1. MOUTH & JAW (CRITICAL): THE MOUTH IS PHYSICALLY SEALED SHUT. LIPS ARE COMPRESSED TIGHTLY TOGETHER. The jaw is fully closed. It is anatomically impossible to see any teeth or the inside of the mouth. " #
-                    f"2. EXPRESSION: A completely neutral, serious facial expression. Not smiling. Lips are pursed slightly. " #
-                    f"3. FACE & IDENTITY: Use the EXACT SAME Japanese woman from the reference image. "
-                    f"4. PHYSIQUE: Strictly maintain her original bone structure and body proportions. "
-                    f"5. NO TEETH MANDATE: Absolutely ZERO visibility of white teeth under any lighting condition. " #
-                    f"SCENE: Wearing {cloth}. Background is {bg}. "
-                    f"QUALITY: Photorealistic, 8k, professional lighting, close-up portrait. "
+                    f"STRICT CONSTRAINTS (PRIORITY: MOUTH & FOCUS): "
+                    # --- 1. 歯を物理的に封じる ---
+                    f"1. MOUTH SEALED: Lips are firmly pressed flesh-to-flesh touching together completely. No parting line, no gap. "
+                    f"2. NO TEETH VISIBLE: Absolutely zero white enamel or teeth structures visible anywhere. "
+                    # --- 2. 背景をプロっぽくぼかす ---
+                    f"3. FOCUS & BOKEH: Professional portrait photography with shallow depth of field. Sharp focus is ONLY on the woman's eyes and face. The background ({bg}) is smoothly blurred with beautiful soft bokeh. Aperture f/1.8 style. "
+                    # --- 3. 基本設定 ---
+                    f"4. EXPRESSION: Calm, serene, neutral facial expression with sealed lips. "
+                    f"5. IDENTITY: Use the EXACT SAME Japanese woman from the reference image. Keep her bone structure. "
+                    f"SCENE: Wearing {cloth}. "
+                    f"QUALITY: Photorealistic, 8k, professional lighting. "
                 )
 
                 # 安全フィルターの緩和設定
