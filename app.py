@@ -42,14 +42,14 @@ with col_right:
     if run_button and source_img:
         with st.spinner("骨格・スタイル・表情を固定して生成中..."):
             try:
-# 【鉄壁の口元封印プロンプト】
+# 【最終手段：笑顔という単語を排除したプロンプト】
                 prompt = (
                     f"STRICT CONSTRAINTS: "
                     f"1. FACE & IDENTITY: Use the EXACT SAME Japanese woman from the reference image. "
                     f"2. PHYSIQUE: Strictly maintain her original bone structure and body proportions. "
-                    f"3. MOUTH (CRITICAL): MOUTH MUST BE FIRMLY CLOSED. NO TEETH VISIBLE. " # 「口を固く閉じる」を強調
-                    f"4. EXPRESSION: Subtle and gentle smile with lips pressed together. Do not show the inside of the mouth. " # 「唇を合わせたまま」を強調
-                    f"5. NO TEETH MANDATE: Absolutely no white teeth or gaps between lips. " # 「白い歯を見せない」と明記
+                    f"3. MOUTH (ABSOLUTE): MOUTH MUST BE COMPLETELY SEALED. LIPS ARE TOUCHING. NO GAP BETWEEN LIPS. " # 「完全に封印」「唇が触れている」「隙間なし」を徹底
+                    f"4. EXPRESSION: A calm, serene, and pleasant facial expression with eyes slightly relaxed. " # 「笑顔」という言葉を使わず、「穏やかで心地よい表情、目元はリラックス」に変更
+                    f"5. NO TEETH MANDATE: Absolutely ZERO visibility of teeth or inside of mouth under any circumstances. " # 「いかなる状況でも歯の露出はゼロ」と強調
                     f"SCENE: Wearing {cloth}. Background is {bg}. "
                     f"QUALITY: Photorealistic, 8k, professional studio lighting. "
                 )
