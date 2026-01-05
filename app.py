@@ -22,7 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📸 AI KISEKAE Manager [Sharp & Tight Focus]")
+st.title("📸 AI KISEKAE Manager [Razor Sharp Focus]")
 
 col_left, col_right = st.columns([1, 1.2])
 
@@ -37,4 +37,10 @@ with col_left:
          "和装（浴衣）", "メイド服"])
     
     bg = st.selectbox("3. 背景を選ぶ", 
-        ["高級ホテルのスイートルーム", "夜の繁華街
+        ["高級ホテルのスイートルーム", "夜の繁華街", "撮影スタジオ", "リゾートビーチ", "落ち着いたカフェ"])
+
+    st.divider()
+    run_button = st.button("✨ 超クッキリ全身で生成")
+
+with col_right:
+    st.subheader
