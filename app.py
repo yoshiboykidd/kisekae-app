@@ -22,7 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📸 AI KISEKAE Manager [Edit Mode Optimized]")
+st.title("📸 AI KISEKAE Manager [Full Body & Safety Fixed]")
 
 col_left, col_right = st.columns([1, 1.2])
 
@@ -30,9 +30,10 @@ with col_left:
     st.subheader("⚙️ 生成設定")
     source_img = st.file_uploader("1. 元写真をアップロード", type=['png', 'jpg', 'jpeg'])
     
+    # ビキニの名称を変更して安全性を高める
     cloth = st.selectbox("2. 服装を選ぶ", 
         ["清楚な白ワンピース", "タイトな赤いドレス", "ナース服", "OL風オフィスカジュアル", 
-         "紺色の学生服", "スタイリッシュなリゾートビキニ", 
+         "紺色の学生服", "リゾート用スイムウェア（パレオ付き）", 
          "黒いレオタードとうさ耳カチューシャのコスチューム", 
          "和装（浴衣）", "メイド服"])
     
@@ -40,26 +41,26 @@ with col_left:
         ["高級ホテルのスイートルーム", "夜の繁華街", "撮影スタジオ", "リゾートビーチ", "落ち着いたカフェ"])
 
     st.divider()
-    run_button = st.button("✨ 着せ替えを実行")
+    run_button = st.button("✨ 全身写真で生成を開始")
 
 with col_right:
     st.subheader("🖼️ 生成結果")
     if run_button and source_img:
-        with st.spinner("新しい衣装をデザイン中..."):
+        with st.spinner("全身構図で描画中..."):
             try:
-                # 【着せ替え（Change）を最優先にしたプロンプト】
+                # 【全身指定(広角)＋着せ替え＋口元封鎖プロンプト】
                 prompt = (
                     f"IMAGE EDITING TASK: Change the clothes and background while keeping the person's face. "
-                    # --- 1. 新しい衣装と背景 (ここを最優先に) ---
-                    f"NEW OUTFIT: A high-quality full-body {cloth}. "
+                    # --- 1. 構図（最優先・広角全身） ---
+                    f"COMPOSITION (CRITICAL): WIDE-ANGLE FULL BODY SHOT. Standing pose. The entire physique from head to feet must be clearly visible in the frame. "
+                    # --- 2. 新しい衣装と背景 ---
+                    f"NEW OUTFIT: A high-quality full-body outfit of {cloth}. "
                     f"NEW BACKGROUND: {bg} with intense f/1.2 soft bokeh blur. "
-                    # --- 2. 構図（全身） ---
-                    f"COMPOSITION: Full body shot, entire body visible from head to toe. "
-                    # --- 3. 顔の維持と口元封鎖 (後から条件付け) ---
-                    f"FACE PRESERVATION: Keep the same facial features and identity of the Japanese woman in the reference. "
-                    f"MOUTH: Lips MUST be firmly sealed together. NO teeth visible. "
+                    # --- 3. 口元と歯の物理的封鎖 (継続) ---
+                    f"MOUTH: LIPS MUST BE FIRMLY SEALED TOGETHER. NO TEETH VISIBLE anywhere. "
+                    # --- 4. 顔の維持 ---
+                    f"FACE PRESERVATION: Keep the facial features and identity of the Japanese woman in the reference. "
                     f"EXPRESSION: Calm and neutral. "
-                    # --- 4. 品質 ---
                     f"QUALITY: Photorealistic, 8k, professional studio lighting, masterpiece. "
                 )
 
@@ -70,13 +71,14 @@ with col_right:
                     types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
                 ]
 
+                # アスペクト比をさらに縦長(2:3)に変更して全身を促す
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
                     contents=[types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg'), prompt],
                     config=types.GenerateContentConfig(
                         response_modalities=['IMAGE'],
                         safety_settings=safety_settings,
-                        image_config=types.ImageConfig(aspect_ratio="3:4")
+                        image_config=types.ImageConfig(aspect_ratio="2:3")
                     )
                 )
 
@@ -89,18 +91,12 @@ with col_right:
                     
                     if img_data:
                         generated_img = Image.open(io.BytesIO(img_data))
-                        final_img = generated_img.resize((600, 800))
+                        # リサイズも縦長に合わせて調整（横幅基準600px）
+                        final_img = generated_img.resize((600, 900))
                         
                         buffered = io.BytesIO()
                         final_img.save(buffered, format="JPEG", quality=95)
                         img_base64 = base64.b64encode(buffered.getvalue()).decode()
                         
                         st.markdown(f'<img src="data:image/jpeg;base64,{img_base64}" width="100%" style="border-radius:10px;">', unsafe_allow_html=True)
-                        st.download_button("💾 画像を保存", data=buffered.getvalue(), file_name="kisekae_edited.jpg", mime="image/jpeg")
-                    else:
-                        st.warning("⚠️ 変化が見られませんでした。もう一度試してください。")
-                else:
-                    st.error("⚠️ セーフティフィルターが作動しました。")
-
-            except Exception as e:
-                st.error(f"システムエラー: {e}")
+                        st.download_button("💾 全身画像を保存",
