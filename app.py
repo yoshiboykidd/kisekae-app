@@ -22,7 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📸 AI KISEKAE Manager [Full Body & No Error]")
+st.title("📸 AI KISEKAE Manager [Goldilocks Framing]")
 
 col_left, col_right = st.columns([1, 1.2])
 
@@ -34,39 +34,44 @@ with col_left:
         ["清楚な白ワンピース", "タイトな赤いドレス", "ナース服", "OL風オフィスカジュアル", 
          "紺色の学生服", "リゾート用スイムウェア（パレオ付き）", 
          "黒いレオタードとうさ耳カチューシャのコスチューム", 
-         "和装（浴衣）", "メイド服"])
+         "和装（浴浴衣）", "メイド服"])
     
     bg = st.selectbox("3. 背景を選ぶ", 
         ["高級ホテルのスイートルーム", "夜の繁華街", "撮影スタジオ", "リゾートビーチ", "落ち着いたカフェ"])
 
     st.divider()
-    run_button = st.button("✨ 着せ替えを実行（全身写真）")
+    run_button = st.button("✨ 黄金バランスで生成を開始")
 
 with col_right:
     st.subheader("🖼️ 生成結果")
     if run_button and source_img:
-        with st.spinner("全身構図で描画中..."):
+        with st.spinner("バランス良く描画しています..."):
             try:
-                # 修正版プロンプト：閉じカッコのミスを防ぐため整理
+                # 【自然な余白を持たせた黄金バランスプロンプト】
                 prompt = (
                     f"IMAGE EDITING TASK: Change the clothes and background while keeping the person's face. "
-                    f"COMPOSITION (CRITICAL): WIDE-ANGLE FULL BODY SHOT. Entire physique from head to feet visible. "
+                    # --- 構図：適度な余白のある全身 ---
+                    f"COMPOSITION: A well-balanced full body shot with a natural, comfortable margin around the woman. "
+                    f"She should occupy about 80-85% of the frame height, leaving some breathable empty space above her head and below her feet. "
+                    f"Ensure the entire figure from head to toe is visible and centered without feeling cramped. "
+                    # --- 衣装と背景ボケ ---
                     f"NEW OUTFIT: A high-quality full-body outfit of {cloth}. "
                     f"NEW BACKGROUND: {bg} with intense f/1.2 soft bokeh blur. "
+                    # --- 口元封鎖と顔の維持 ---
                     f"MOUTH: LIPS ARE FIRMLY PRESSED TOGETHER. NO TEETH VISIBLE. "
-                    f"FACE PRESERVATION: Keep the facial features and identity of the Japanese woman in the reference. "
+                    f"FACE PRESERVATION: Keep the exact facial features and identity of the Japanese woman in the reference. "
                     f"EXPRESSION: Calm and neutral. "
-                    f"QUALITY: Photorealistic, 8k, professional lighting."
+                    f"QUALITY: Photorealistic, 8k, professional studio lighting, masterpiece."
                 )
 
                 safety_settings = [
                     types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
                     types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
                     types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
-                    types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
+                    types.SafetySetting(category='HARM_CATEGORY_DANGEROIT_CONTENT', threshold='BLOCK_NONE'),
                 ]
 
-                # 生成のカッコを確実に閉じる
+                # 生成実行 (縦長 2:3 比率を維持)
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
                     contents=[types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg'), prompt],
@@ -85,29 +90,15 @@ with col_right:
                             break
                     
                     if img_data:
-                        # 画像の読み込みと表示
                         generated_img = Image.open(io.BytesIO(img_data))
                         final_img = generated_img.resize((600, 900))
                         
-                        # バッファへの書き出し
                         buffered = io.BytesIO()
                         final_img.save(buffered, format="JPEG", quality=95)
                         
-                        # Streamlit標準の画像表示（エラーが出にくい方法に変更）
+                        # 画像の表示と保存
                         st.image(final_img, use_container_width=True)
                         st.download_button(
-                            label="💾 画像を保存する",
+                            label="💾 全身画像を保存する",
                             data=buffered.getvalue(),
-                            file_name="kisekae_full.jpg",
-                            mime="image/jpeg"
-                        )
-                    else:
-                        st.warning("AIが画像を生成しませんでした。")
-                else:
-                    st.error("安全フィルターによりブロックされました。")
-
-            except Exception as e:
-                st.error(f"システムエラーが発生しました: {e}")
-
-st.markdown("---")
-st.caption("AI KISEKAE Ultra Edition - Bug Fixed")
+                            file_name="kisekae_balanced_full.jpg
