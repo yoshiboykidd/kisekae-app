@@ -5,13 +5,13 @@ from PIL import Image
 import io
 import base64
 
-# --- API設定（Streamlit CloudのSecretsから読み込む設定） ---
+# --- API設定 ---
 API_KEY = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=API_KEY)
 
-st.set_page_config(layout="wide", page_title="AI KISEKAE Professional")
+st.set_page_config(layout="wide", page_title="AI KISEKAE Perfect Pro")
 
-# 高級感のあるUIデザイン
+# UIデザイン
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
@@ -19,12 +19,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📸 AI KISEKAE Absolute Pro")
+st.title("📸 AI KISEKAE Manager [エラー対策済]")
 
 col_left, col_right = st.columns([1, 1.5])
 
 with col_left:
-    st.subheader("⚙️ 制約設定")
+    st.subheader("⚙️ 生成設定")
     source_img = st.file_uploader("1. 元写真をアップロード", type=['png', 'jpg', 'jpeg'])
     
     cloth = st.selectbox("2. 服装を選ぶ", 
@@ -35,54 +35,67 @@ with col_left:
         ["高級ホテルのスイートルーム", "夜の繁華街", "撮影スタジオ", "ビーチ", "落ち着いたカフェ"])
 
     st.divider()
-    run_button = st.button("✨ 条件を厳守して生成を開始")
+    run_button = st.button("✨ 生成を開始（歯出し厳禁）")
 
 with col_right:
-    st.subheader("🖼️ 生成結果 (600x800)")
+    st.subheader("🖼️ 生成結果")
     if run_button and source_img:
-        with st.spinner("骨格・スタイル・表情を固定して生成中..."):
+        with st.spinner("生成中..."):
             try:
-# 【最終手段：笑顔という単語を排除したプロンプト】
+                # 厳格な口元封印プロンプト
                 prompt = (
                     f"STRICT CONSTRAINTS: "
                     f"1. FACE & IDENTITY: Use the EXACT SAME Japanese woman from the reference image. "
                     f"2. PHYSIQUE: Strictly maintain her original bone structure and body proportions. "
-                    f"3. MOUTH (ABSOLUTE): MOUTH MUST BE COMPLETELY SEALED. LIPS ARE TOUCHING. NO GAP BETWEEN LIPS. " # 「完全に封印」「唇が触れている」「隙間なし」を徹底
-                    f"4. EXPRESSION: A calm, serene, and pleasant facial expression with eyes slightly relaxed. " # 「笑顔」という言葉を使わず、「穏やかで心地よい表情、目元はリラックス」に変更
-                    f"5. NO TEETH MANDATE: Absolutely ZERO visibility of teeth or inside of mouth under any circumstances. " # 「いかなる状況でも歯の露出はゼロ」と強調
+                    f"3. MOUTH: MOUTH MUST BE COMPLETELY SEALED. NO TEETH VISIBLE. LIPS ARE TOUCHING. "
+                    f"4. EXPRESSION: Calm, serene, and pleasant facial expression. "
+                    f"5. NO TEETH: Absolutely ZERO visibility of teeth or inside of mouth. "
                     f"SCENE: Wearing {cloth}. Background is {bg}. "
-                    f"QUALITY: Photorealistic, 8k, professional studio lighting. "
+                    f"QUALITY: Photorealistic, 8k, professional lighting. "
                 )
 
+                # 安全フィルターの緩和設定
+                safety_settings = [
+                    types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
+                    types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
+                    types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
+                    types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
+                ]
+
+                # 生成実行
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
                     contents=[types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg'), prompt],
                     config=types.GenerateContentConfig(
                         response_modalities=['IMAGE'],
+                        safety_settings=safety_settings, # フィルター設定を適用
                         image_config=types.ImageConfig(aspect_ratio="3:4")
                     )
                 )
 
-                img_data = None
-                for part in response.candidates[0].content.parts:
-                    if part.inline_data:
-                        img_data = part.inline_data.data
-                        break
-                
-                if img_data:
-                    generated_img = Image.open(io.BytesIO(img_data))
-                    final_img = generated_img.resize((600, 800)) # 指定サイズ固定 [User Rule]
+                # エラー回避：結果が存在するか確認
+                if response.candidates and response.candidates[0].content.parts:
+                    img_data = None
+                    for part in response.candidates[0].content.parts:
+                        if part.inline_data:
+                            img_data = part.inline_data.data
+                            break
                     
-                    buffered = io.BytesIO()
-                    final_img.save(buffered, format="JPEG", quality=95)
-                    img_base64 = base64.b64encode(buffered.getvalue()).decode()
-                    
-                    # クラウド環境で安定して表示するためのHTML表示
-                    st.markdown(f'<img src="data:image/jpeg;base64,{img_base64}" width="100%">', unsafe_allow_html=True)
-                    
-                    st.download_button("💾 画像を保存する", data=buffered.getvalue(), file_name="kisekae_hq.jpg", mime="image/jpeg")
-                    st.success("生成完了！")
+                    if img_data:
+                        generated_img = Image.open(io.BytesIO(img_data))
+                        final_img = generated_img.resize((600, 800))
+                        
+                        buffered = io.BytesIO()
+                        final_img.save(buffered, format="JPEG", quality=95)
+                        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+                        
+                        st.markdown(f'<img src="data:image/jpeg;base64,{img_base64}" width="100%">', unsafe_allow_html=True)
+                        st.download_button("💾 画像を保存する", data=buffered.getvalue(), file_name="kisekae.jpg", mime="image/jpeg")
+                    else:
+                        st.warning("AIが画像を生成しませんでした。プロンプトや衣装を変更してみてください。")
                 else:
-                    st.error("画像データが取得できませんでした。")
+                    # フィルターでブロックされた場合の表示
+                    st.error("⚠️ 安全フィルターにより生成がブロックされました。より露出の少ない衣装や、別の写真で試してください。")
+
             except Exception as e:
-                st.error(f"エラー: {e}")
+                st.error(f"システムエラー: {e}")
