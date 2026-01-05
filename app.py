@@ -42,16 +42,16 @@ with col_right:
     if run_button and source_img:
         with st.spinner("生成中..."):
             try:
-                # 厳格な口元封印プロンプト
+                # 【最終決戦：物理的封鎖プロンプト】
                 prompt = (
-                    f"STRICT CONSTRAINTS: "
-                    f"1. FACE & IDENTITY: Use the EXACT SAME Japanese woman from the reference image. "
-                    f"2. PHYSIQUE: Strictly maintain her original bone structure and body proportions. "
-                    f"3. MOUTH: MOUTH MUST BE COMPLETELY SEALED. NO TEETH VISIBLE. LIPS ARE TOUCHING. "
-                    f"4. EXPRESSION: Calm, serene, and pleasant facial expression. "
-                    f"5. NO TEETH: Absolutely ZERO visibility of teeth or inside of mouth. "
+                    f"STRICT CONSTRAINTS (PRIORITY ONE): "
+                    f"1. MOUTH & JAW (CRITICAL): THE MOUTH IS PHYSICALLY SEALED SHUT. LIPS ARE COMPRESSED TIGHTLY TOGETHER. The jaw is fully closed. It is anatomically impossible to see any teeth or the inside of the mouth. " #
+                    f"2. EXPRESSION: A completely neutral, serious facial expression. Not smiling. Lips are pursed slightly. " #
+                    f"3. FACE & IDENTITY: Use the EXACT SAME Japanese woman from the reference image. "
+                    f"4. PHYSIQUE: Strictly maintain her original bone structure and body proportions. "
+                    f"5. NO TEETH MANDATE: Absolutely ZERO visibility of white teeth under any lighting condition. " #
                     f"SCENE: Wearing {cloth}. Background is {bg}. "
-                    f"QUALITY: Photorealistic, 8k, professional lighting. "
+                    f"QUALITY: Photorealistic, 8k, professional lighting, close-up portrait. "
                 )
 
                 # 安全フィルターの緩和設定
