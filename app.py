@@ -42,15 +42,16 @@ with col_right:
     if run_button and source_img:
         with st.spinner("骨格・スタイル・表情を固定して生成中..."):
             try:
-                # 【最重要】制約プロンプト
+# 【鉄壁の口元封印プロンプト】
                 prompt = (
                     f"STRICT CONSTRAINTS: "
-                    f"1. FACE & IDENTITY: The woman's face must be exactly the same as in the reference image. "
-                    f"2. PHYSIQUE & BONE STRUCTURE: Strictly maintain her original bone structure and body proportions. No changes to her body shape. "
-                    f"3. EXPRESSION: Mandatory gentle smile with MOUTH CLOSED. "
-                    f"4. NO TEETH: Do not show teeth. Lips must remain together. "
-                    f"5. SCENE: Wearing {cloth}. Background is {bg}. "
-                    f"6. QUALITY: Photorealistic, 8k, professional studio lighting. "
+                    f"1. FACE & IDENTITY: Use the EXACT SAME Japanese woman from the reference image. "
+                    f"2. PHYSIQUE: Strictly maintain her original bone structure and body proportions. "
+                    f"3. MOUTH (CRITICAL): MOUTH MUST BE FIRMLY CLOSED. NO TEETH VISIBLE. " # 「口を固く閉じる」を強調
+                    f"4. EXPRESSION: Subtle and gentle smile with lips pressed together. Do not show the inside of the mouth. " # 「唇を合わせたまま」を強調
+                    f"5. NO TEETH MANDATE: Absolutely no white teeth or gaps between lips. " # 「白い歯を見せない」と明記
+                    f"SCENE: Wearing {cloth}. Background is {bg}. "
+                    f"QUALITY: Photorealistic, 8k, professional studio lighting. "
                 )
 
                 response = client.models.generate_content(
