@@ -22,7 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📸 AI KISEKAE Manager [Full Body Edition]")
+st.title("📸 AI KISEKAE Manager [Edit Mode Optimized]")
 
 col_left, col_right = st.columns([1, 1.2])
 
@@ -40,31 +40,29 @@ with col_left:
         ["高級ホテルのスイートルーム", "夜の繁華街", "撮影スタジオ", "リゾートビーチ", "落ち着いたカフェ"])
 
     st.divider()
-    run_button = st.button("✨ 全身写真で生成を開始")
+    run_button = st.button("✨ 着せ替えを実行")
 
 with col_right:
     st.subheader("🖼️ 生成結果")
     if run_button and source_img:
-        with st.spinner("全身の構図で描画しています..."):
+        with st.spinner("新しい衣装をデザイン中..."):
             try:
-                # 【全身撮影指定を追加したプロンプト】
+                # 【着せ替え（Change）を最優先にしたプロンプト】
                 prompt = (
-                    f"STRICT CONSTRAINTS (HIGH PRIORITY): "
-                    # --- 1. 構図（全身指定） ---
-                    f"1. COMPOSITION: Full body shot. The woman's entire body from head to toe must be visible in the frame. "
-                    # --- 2. 背景ボケ（継続） ---
-                    f"2. ULTRA BOKEH: Professional portrait with f/1.2 ultra-shallow depth of field. Sharp focus is ONLY on the woman. The background ({bg}) MUST BE HEAVILY BLURRED. "
-                    # --- 3. 口元と歯の物理的封鎖 (継続) ---
-                    f"3. MOUTH: LIPS ARE FIRMLY PRESSED TOGETHER. SEALED SHUT. NO TEETH VISIBLE. "
-                    # --- 4. 表情と同一性の維持 ---
-                    f"4. EXPRESSION: Calm, serene, neutral facial expression. "
-                    f"5. IDENTITY: EXACT SAME Japanese woman from reference. Same bone structure. "
-                    # --- 5. 服装 ---
-                    f"6. COSTUME: Fashion photography of {cloth} worn as a full outfit. "
-                    f"QUALITY: Photorealistic, 8k, professional studio lighting. "
+                    f"IMAGE EDITING TASK: Change the clothes and background while keeping the person's face. "
+                    # --- 1. 新しい衣装と背景 (ここを最優先に) ---
+                    f"NEW OUTFIT: A high-quality full-body {cloth}. "
+                    f"NEW BACKGROUND: {bg} with intense f/1.2 soft bokeh blur. "
+                    # --- 2. 構図（全身） ---
+                    f"COMPOSITION: Full body shot, entire body visible from head to toe. "
+                    # --- 3. 顔の維持と口元封鎖 (後から条件付け) ---
+                    f"FACE PRESERVATION: Keep the same facial features and identity of the Japanese woman in the reference. "
+                    f"MOUTH: Lips MUST be firmly sealed together. NO teeth visible. "
+                    f"EXPRESSION: Calm and neutral. "
+                    # --- 4. 品質 ---
+                    f"QUALITY: Photorealistic, 8k, professional studio lighting, masterpiece. "
                 )
 
-                # 安全フィルターの緩和設定
                 safety_settings = [
                     types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
                     types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
@@ -72,14 +70,13 @@ with col_right:
                     types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
                 ]
 
-                # 画像生成実行
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
                     contents=[types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg'), prompt],
                     config=types.GenerateContentConfig(
                         response_modalities=['IMAGE'],
                         safety_settings=safety_settings,
-                        image_config=types.ImageConfig(aspect_ratio="3:4") # 縦長構図を維持
+                        image_config=types.ImageConfig(aspect_ratio="3:4")
                     )
                 )
 
@@ -98,4 +95,12 @@ with col_right:
                         final_img.save(buffered, format="JPEG", quality=95)
                         img_base64 = base64.b64encode(buffered.getvalue()).decode()
                         
-                        st.markdown(f'<img src="data:image/jpeg;base64,{img_base64}" width="100%" style="border-radius:10px;">
+                        st.markdown(f'<img src="data:image/jpeg;base64,{img_base64}" width="100%" style="border-radius:10px;">', unsafe_allow_html=True)
+                        st.download_button("💾 画像を保存", data=buffered.getvalue(), file_name="kisekae_edited.jpg", mime="image/jpeg")
+                    else:
+                        st.warning("⚠️ 変化が見られませんでした。もう一度試してください。")
+                else:
+                    st.error("⚠️ セーフティフィルターが作動しました。")
+
+            except Exception as e:
+                st.error(f"システムエラー: {e}")
