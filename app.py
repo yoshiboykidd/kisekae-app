@@ -3,105 +3,99 @@ from google import genai
 from google.genai import types
 from PIL import Image
 import io
-import base64
+import time
 
-# --- API設定 ---
-API_KEY = st.secrets["GEMINI_API_KEY"]
-client = genai.Client(api_key=API_KEY)
+# --- 1. 認証機能 (パスワード設定) ---
+def check_password():
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+    if not st.session_state["password_correct"]:
+        st.title("🔐 Karinto Group Image Tool")
+        pwd = st.text_input("合言葉を入力してください", type="password")
+        if st.button("ログイン"):
+            if pwd == "karinto": # 好きな合言葉に変更可能
+                st.session_state["password_correct"] = True
+                st.rerun()
+            else:
+                st.error("合言葉が正しくありません")
+        return False
+    return True
 
-st.set_page_config(layout="wide", page_title="AI KISEKAE Tight-Portrait")
+# --- 2. メインアプリ ---
+if check_password():
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+    client = genai.Client(api_key=API_KEY)
 
-# --- UIデザイン ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    .stButton>button { 
-        background: linear-gradient(45deg, #FF4B4B, #FF8F8F); 
-        color: white; border: none; height: 3.5em; font-weight: bold; width: 100%; border-radius: 10px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    st.title("📸 AI KISEKAE Manager [4-Pose Edition]")
 
-st.title("📸 AI KISEKAE Manager [Tight & High-Res]")
+    with st.sidebar:
+        st.subheader("⚙️ 生成設定")
+        source_img = st.file_uploader("1. 元写真をアップロード", type=['png', 'jpg', 'jpeg'])
+        
+        # 服装のハイブリッド選択
+        cloth_main = st.selectbox("2. 服装の系統", 
+            ["清楚ワンピース", "タイトミニドレス", "OL風オフィスカジュアル", 
+             "ナース服", "バニーガール", "メイド服", "リゾートビキニ", "浴衣"])
+        cloth_detail = st.text_input("詳細指定（色、素材、デザイン）", placeholder="例：黒のサテン地、赤いリボン")
+        
+        bg = st.selectbox("3. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "ビーチ"])
+        
+        st.divider()
+        run_button = st.button("✨ 4枚同時に生成開始")
 
-col_left, col_right = st.columns([1, 1.2])
-
-with col_left:
-    st.subheader("⚙️ 生成設定")
-    source_img = st.file_uploader("1. 元写真をアップロード", type=['png', 'jpg', 'jpeg'])
-    
-    cloth = st.selectbox("2. 服装を選ぶ", 
-        ["清楚な白ワンピース", "タイトな赤いドレス", "OL風オフィスカジュアル", 
-         "ナース服", "黒のレースクイーン", "リゾート用スイムウェア（パレオ付き）", 
-         "黒いレオタードとうさ耳カチューシャのコスチューム", 
-         "和装（浴衣）", "メイド服"])
-    
-    bg = st.selectbox("3. 背景を選ぶ", 
-        ["高級ホテルのスイートルーム", "夜の繁華街", "撮影スタジオ", "リゾートビーチ", "落ち着いたカフェ"])
-
-    st.divider()
-    run_button = st.button("✨ 人物を大きく生成")
-
-with col_right:
-    st.subheader("🖼️ 生成結果")
     if run_button and source_img:
-        with st.spinner("余白を削り、人物を大きく描画中..."):
-            try:
-                # 【余白を最小化し、人物を大きく配置するプロンプト】
-                prompt = (
-                    f"IMAGE EDITING TASK: Change the clothes and background while keeping the person's face. "
-                    # --- 構図：余白なしの超寄り腰上 ---
-                    f"COMPOSITION (CRITICAL): A VERY TIGHT waist-up portrait. The woman should fill almost the ENTIRE vertical height of the frame. "
-                    f"Minimal empty space above the head. Zoom in so the subject is large and impactful. "
-                    # --- 被写体のシャープ化 ---
-                    f"FOCUS: Razor-sharp focus on the subject. Crisp details on eyes and skin. "
-                    f"NEW BACKGROUND: {bg} with smooth, heavy bokeh background blur. "
-                    # --- 同一性・口元・表情 ---
-                    f"MOUTH: LIPS ARE FIRMLY PRESSED TOGETHER. NO TEETH VISIBLE. "
-                    f"FACE: Keep the exact facial features and identity of the Japanese woman in the reference. "
-                    f"QUALITY: Photorealistic photography, 8k, detailed skin texture, professional lighting, masterpiece."
-                )
+        # 固定する4つのポーズ
+        poses = [
+            "Full body shot, standing straight, facing forward.", # 正面
+            "Full body shot, posing from a 45-degree angle, hand on hip.", # 斜め
+            "Full body shot, sitting gracefully on a chair.", # 座り姿
+            "Full body shot, looking back over the shoulder." # 振り返り
+        ]
+        
+        st.subheader("🖼️ 生成結果")
+        cols_row1 = st.columns(2)
+        cols_row2 = st.columns(2)
+        placeholders = [cols_row1[0], cols_row1[1], cols_row2[0], cols_row2[1]]
 
-                safety_settings = [
-                    types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
-                    types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
-                    types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
-                    types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
-                ]
-
-                # 寄り構図に最適な 3:4 比率
-                response = client.models.generate_content(
-                    model='gemini-3-pro-image-preview',
-                    contents=[types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg'), prompt],
-                    config=types.GenerateContentConfig(
-                        response_modalities=['IMAGE'],
-                        safety_settings=safety_settings,
-                        image_config=types.ImageConfig(aspect_ratio="3:4")
-                    )
-                )
-
-                if response.candidates and response.candidates[0].content.parts:
-                    img_data = None
-                    for part in response.candidates[0].content.parts:
-                        if part.inline_data:
-                            img_data = part.inline_data.data
-                            break
-                    
-                    if img_data:
-                        generated_img = Image.open(io.BytesIO(img_data))
-                        final_img = generated_img.resize((600, 800))
-                        
-                        buffered = io.BytesIO()
-                        final_img.save(buffered, format="JPEG", quality=95)
-                        
-                        st.image(final_img, use_container_width=True)
-                        st.download_button(
-                            label="💾 高画質画像を保存する",
-                            data=buffered.getvalue(),
-                            file_name="kisekae_tight.jpg",
-                            mime="image/jpeg"
+        for i, pose_text in enumerate(poses):
+            with placeholders[i]:
+                with st.spinner(f"ポーズ {i+1} を生成中..."):
+                    try:
+                        # 黄金プロンプト
+                        prompt = (
+                            f"IMAGE EDITING TASK: Change clothes and background while keeping the face. "
+                            f"COMPOSITION: {pose_text} " 
+                            f"OUTFIT: A high-quality {cloth_main}. {cloth_detail}. "
+                            f"BACKGROUND: {bg} with professional bokeh blur. "
+                            f"MOUTH: LIPS SEALED TOGETHER. NO TEETH VISIBLE. " # 歯出し禁止
+                            f"FOCUS: Razor-sharp focus on the subject. " # 人物シャープ化
+                            f"IDENTITY: Keep the exact facial features of the Japanese woman in the reference." 
+                            f"QUALITY: Photorealistic photography, 8k, masterpiece."
                         )
-                    else:
-                        st.warning("生成に失敗しました。")
-                else:
-                    st.error("安全フィルターによりブロックされました。")
+
+                        response = client.models.generate_content(
+                            model='gemini-3-pro-image-preview',
+                            contents=[types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg'), prompt],
+                            config=types.GenerateContentConfig(
+                                response_modalities=['IMAGE'],
+                                safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
+                                image_config=types.ImageConfig(aspect_ratio="2:3")
+                            )
+                        )
+
+                        if response.candidates and response.candidates[0].content.parts:
+                            img_data = response.candidates[0].content.parts[0].inline_data.data
+                            img = Image.open(io.BytesIO(img_data)).resize((600, 900))
+                            st.image(img, caption=f"ポーズ {i+1}", use_container_width=True)
+                            
+                            buf = io.BytesIO()
+                            img.save(buf, format="JPEG")
+                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"p{i+1}.jpg", mime="image/jpeg")
+                        else:
+                            st.error(f"ポーズ {i+1}: 生成失敗")
+                    except Exception as e:
+                        st.error(f"ポーズ {i+1} エラー: {e}")
+                    time.sleep(1) # API負荷軽減
+
+st.markdown("---")
+st.caption("© 2026 Karinto Group Professional Tool")
