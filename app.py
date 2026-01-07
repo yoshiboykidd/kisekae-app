@@ -24,17 +24,18 @@ def check_password():
 
 # --- 2. メインアプリ ---
 if check_password():
+    # APIキーの取得とクライアント設定
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
     st.title("📸 AI KISEKAE Manager [Reference Mode]")
 
-    # --- 大胆なポーズ・ライブラリ ---
+    # 大胆なポーズ・ライブラリ
     POSE_LIBRARY = {
         "Standard (王道)": [
             "Full body shot, walking confidently toward the camera, dress fluttering.",
             "High angle full body shot, looking up at the camera with a bright expression.",
-            "Full body shot, sitting on a high stool, one leg stretched forward elegantly.",
+            "Full body shot, sitting on a high stool, one leg stretched forward.",
             "Full body shot, leaning against a luxury car or marble pillar.",
             "Full body shot, captured from the side, looking back with a soft smile.",
             "Full body shot, standing with a slight twist in the waist to emphasize curves.",
@@ -54,7 +55,7 @@ if check_password():
             "Full body shot, twirling around, skirt expanding in a circle.",
             "Full body shot, kneeling on a soft carpet, holding a plush pillow.",
             "Full body shot, crouching down and peeking into the camera lens.",
-            "Full body shot, running gently on a beach, hair wind-blown and messy-cute.",
+            "Full body shot, running gently on a beach, hair wind-blown.",
             "Full body shot, sitting on a swing or garden bench, legs swinging."
         ]
     }
@@ -75,15 +76,12 @@ if check_password():
 
     if run_button and source_img:
         selected_poses = random.sample(POSE_LIBRARY[vibe_choice], 4)
-        
-        # --- ここがエラー箇所でした。正しく修正済みです ---
         st.subheader(f"🖼️ 生成結果 [{vibe_choice}]")
         
-        cols_row1 = st.columns(2)
-        cols_row2 = st.columns(2)
-        placeholders = [cols_row1[0], cols_row1[1], cols_row2[0], cols_row2[1]]
+        cols = [st.columns(2), st.columns(2)]
+        placeholders = [cols[0][0], cols[0][1], cols[1][0], cols[1][1]]
 
-        # AIに渡す画像リストを作成
+        # AIに渡す画像パーツの準備
         base_parts = [types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')]
         if ref_img:
             base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
@@ -92,12 +90,12 @@ if check_password():
             with placeholders[i]:
                 with st.spinner(f"デザイン {i+1}..."):
                     try:
-                        # 参照画像がある場合、その服をコピーするようにAIへ強く指示
+                        # 衣装指示の構築
                         cloth_task = f"A high-quality {cloth_main}. {cloth_detail}."
                         if ref_img:
                             cloth_task = (
-                                f"REPLICATE the EXACT outfit (color, pattern, material, design) from the SECOND reference image. "
-                                f"The person should wear this {cloth_main}. {cloth_detail}."
+                                f"REPLICATE the EXACT outfit (color, pattern, material, design) from the SECOND image. "
+                                f"The person must wear this {cloth_main}. {cloth_detail}."
                             )
 
                         prompt = (
@@ -105,10 +103,10 @@ if check_password():
                             f"COMPOSITION: {pose_text} " 
                             f"OUTFIT: {cloth_task} "
                             f"BACKGROUND: {bg} with intense bokeh blur. "
-                            f"MOUTH: LIPS SEALED TOGETHER. NO TEETH VISIBLE. " # 不変のルール
+                            f"MOUTH: LIPS SEALED TOGETHER. NO TEETH VISIBLE. " # 黄金ルール
                             f"FOCUS: Razor-sharp focus on the person. " 
-                            f"IDENTITY: Keep the facial features of the Japanese woman in IMAGE 1."
-                            f"QUALITY: Photorealistic, 8k, professional lighting."
+                            f"IDENTITY: Keep the facial features of the woman in IMAGE 1."
+                            f"QUALITY: Photorealistic, 8k, masterpiece."
                         )
 
                         response = client.models.generate_content(
@@ -117,8 +115,15 @@ if check_password():
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
                                 safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
-                                image_config=types.ImageConfig(aspect_ratio="2:3")
+                                image_config=types.ImageConfig(aspect_ratio="2:3") # 黄金比
                             )
                         )
 
-                        if response.candidates and response.candidates[0].
+                        if response.candidates and response.candidates[0].content.parts:
+                            img_data = response.candidates[0].content.parts[0].inline_data.data
+                            img = Image.open(io.BytesIO(img_data)).resize((600, 900))
+                            st.image(img, use_container_width=True)
+                            
+                            buf = io.BytesIO()
+                            img.save(buf, format="JPEG")
+                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"pose_{i+1
