@@ -26,26 +26,25 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE [High Stability V5]")
+    st.title("📸 AI KISEKAE [Absolute Identity Lock]")
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
-        src_img = st.file_uploader("1. キャスト写真 (必須)", type=['png', 'jpg', 'jpeg'])
-        ref_img = st.file_uploader("2. 衣装参照写真 (任意)", type=['png', 'jpg', 'jpeg'])
+        src_img = st.file_uploader("1. キャスト写真 (顔・骨格：絶対遵守)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. 衣装素材写真 (柄・色：引用のみ)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        # フィルターに弾かれにくいマイルドな名称に変更
-        cloth_main = st.selectbox("3. スタイル選択", [
-            "リゾート・サマー・ウェア", # 実質的な水着
+        cloth_main = st.selectbox("3. 強制スタイル (形)", [
+            "リゾート・サマー・スタイル", 
             "タイトフィット・ミニドレス", 
             "モダン・フェミニン・ドレス", 
             "プロフェッショナル・ナース服", 
             "クラシック・メイド・スタイル",
             "サマー・ユカタ・スタイル"
         ])
-        cloth_detail = st.text_input("追加指示", placeholder="例：黒とピンク、レース素材")
+        cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン地、ピンクのリボン")
         bg = st.selectbox("4. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "サマー・リゾート地"])
         st.divider()
-        run_button = st.button("✨ 掟を守って生成開始")
+        run_button = st.button("✨ 掟を遵守して一括生成")
 
     if run_button and src_img:
         st.subheader("🖼️ 生成結果")
@@ -56,17 +55,23 @@ if check_password():
         if ref_img:
             base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
 
-        # プロンプト：AIの警戒を解くための「ファッション誌」的な文脈
+        # AIへの「絶対命令」プロンプト
+        # IMAGE 1を唯一の「人物」として定義し、IMAGE 2を「テクスチャ」に貶める
         prompt = (
-            f"### CONCEPT: High-end professional fashion editorial for a summer resort magazine.\n"
-            f"1. FACE: Identical to IMAGE 1. Strictly preserve all facial features and bone structure.\n"
-            f"2. EXPRESSION: Elegant, calm, LIPS SEALED, NO TEETH visible. Professional model look.\n"
-            f"3. OUTFIT: {cloth_main}. Replicate patterns, colors, and DNA from IMAGE 2 onto this resort-inspired outfit. {cloth_detail}.\n"
-            f"4. POSES: A grid of 4 vertical poses: [Top-Left: Standing], [Top-Right: Action], [Bottom-Left: Sitting], [Bottom-Right: Face focus].\n"
-            f"5. TECHNICAL: 8k resolution, professional studio lighting, depth of field, sharp focus on the woman. NO EXPLICIT CONTENT."
+            f"SYSTEM COMMAND: You are a professional photographer. Follow these laws strictly.\n\n"
+            f"LAW 1 (IDENTITY): The SUBJECT is the woman in IMAGE 1. Every single feature of her face, jawline, and eyes MUST be 100% identical to IMAGE 1. NEVER use the face or body from IMAGE 2.\n"
+            f"LAW 2 (MOUTH): In all panels, the woman's LIPS MUST BE SEALED. NO TEETH ALLOWED. Failure to hide teeth is a critical error.\n"
+            f"LAW 3 (OUTFIT): The garment shape MUST be '{cloth_main}'. Use IMAGE 2 ONLY as a texture/color pattern source. Ignore the person wearing the clothes in IMAGE 2.\n"
+            f"LAW 4 (CONSISTENCY): Create a 2x2 grid. All 4 panels must show the SAME woman and SAME outfit but in different poses.\n\n"
+            f"POSES IN GRID:\n"
+            f"- Top-Left: Full body standing.\n"
+            f"- Top-Right: Dynamic movement.\n"
+            f"- Bottom-Left: Sitting gracefully.\n"
+            f"- Bottom-Right: Face close-up.\n\n"
+            f"OUTPUT: 8k photorealistic photography, professional lighting, sharp focus on the woman. Background: {bg}."
         )
 
-        with st.spinner("デザインを最適化して生成中..."):
+        with st.spinner("掟に基づき、アイデンティティをロック中..."):
             try:
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
@@ -75,9 +80,7 @@ if check_password():
                         response_modalities=['IMAGE'],
                         safety_settings=[
                             types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
-                            types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
                             types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
-                            types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
                         ],
                         image_config=types.ImageConfig(aspect_ratio="2:3")
                     )
@@ -88,7 +91,7 @@ if check_password():
                     full_img = Image.open(io.BytesIO(grid_data))
                     w, h = full_img.size
                     coords = [(0, 0, w//2, h//2), (w//2, 0, w, h//2), (0, h//2, w//2, h), (w//2, h//2, w, h)]
-                    labels = ["正面", "動き", "座り", "寄り"]
+                    labels = ["正面全身", "動き全身", "座り姿", "顔寄り"]
                     
                     for i, coord in enumerate(coords):
                         with placeholders[i]:
@@ -99,9 +102,9 @@ if check_password():
                             cropped.save(buf, format="JPEG")
                             st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"p{i+1}.jpg", mime="image/jpeg", key=f"btn_{i}")
                 else:
-                    st.error("AI規制によりブロックされました。指示内容をよりマイルドにするか、別のカテゴリでお試しください。")
+                    st.error("AI規制によりブロックされました。マイルドな指示に変えてみてください。")
             except Exception as e:
                 st.error(f"エラー: {e}")
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Identity Secure Engine V5")
+st.caption("© 2026 Karinto Group - Absolute Identity Engine V6")
