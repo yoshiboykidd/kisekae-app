@@ -5,7 +5,7 @@ from PIL import Image
 import io
 import time
 
-# --- 1. 認証機能 ---
+# --- 1. 認証機能 (karin10) ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -26,24 +26,21 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE [Perfect Aspect Ratio]")
+    st.title("📸 AI KISEKAE [Strict Rule Engine]")
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
-        src_img = st.file_uploader("1. キャスト写真 (顔用)", type=['png', 'jpg', 'jpeg'])
-        ref_img = st.file_uploader("2. 衣装参照写真 (柄・素材用)", type=['png', 'jpg', 'jpeg'])
+        src_img = st.file_uploader("1. キャスト写真 (顔・骨格の絶対守護)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. 衣装参照写真 (デザイン・柄のみ引用)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        cloth_main = st.selectbox("3. スタイル", ["ワンピースドレス", "タイトミニドレス", "オフィスカジュアル", "ナーススタイル", "メイドスタイル", "スイムウェア", "浴衣"])
-        cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン、赤リボン")
+        cloth_main = st.selectbox("3. 強制する形 (スタイル)", ["リゾートビキニ", "タイトミニドレス", "清楚ワンピース", "ナースウェア", "バニーガール", "メイドウェア", "浴衣"])
+        cloth_detail = st.text_input("追加のこだわり", placeholder="例：黒とピンク、大きなリボンを追加")
         bg = st.selectbox("4. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "プライベートビーチ"])
         st.divider()
-        run_button = st.button("✨ 黄金比で4枚生成")
+        run_button = st.button("✨ 掟を守って4枚生成")
 
     if run_button and src_img:
-        # スロット名の定義
-        slots = ["正面全身", "斜め動き", "座り姿", "顔寄り"]
-        st.subheader("🖼️ 生成結果 (2:3 黄金比)")
-        
+        st.subheader("🖼️ 生成結果 (掟遵守・スタイル融合)")
         cols = [st.columns(2), st.columns(2)]
         placeholders = [cols[0][0], cols[0][1], cols[1][0], cols[1][1]]
 
@@ -51,27 +48,34 @@ if check_password():
         if ref_img:
             base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
 
-        # プロンプト：縮尺を狂わせないよう「縦長の4面構成」を明示
+        # プロンプト：命令系統の再構築
+        # Image 2を「Garment Shape」ではなく「Fabric DNA」として扱う
         prompt = (
-            f"TASK: Generate a single professional photography sheet with a 2x2 grid layout. "
-            f"Layout contains 4 distinct portraits of the person from IMAGE 1. "
-            f"Each of the 4 panels must be a TALL VERTICAL orientation (2:3 aspect ratio). "
-            f"IDENTITY: Strictly preserve the face from IMAGE 1 across all panels. "
-            f"OUTFIT: All panels MUST wear the IDENTICAL {cloth_main} based on IMAGE 2. {cloth_detail}. "
-            f"POSES: Top-Left: Standing front. Top-Right: Dynamic walking. Bottom-Left: Sitting. Bottom-Right: Beauty close-up. "
-            f"ENVIRONMENT: {bg} with bokeh. MOUTH: Lips sealed, no teeth. "
-            f"QUALITY: 8k resolution, professional lighting, consistent colors."
+            f"### MANDATORY LAWS (MUST BE FOLLOWED):\n"
+            f"1. FACE IDENTITY: The woman's face, features, and bone structure MUST be 100% identical to IMAGE 1. NEVER use the face from IMAGE 2.\n"
+            f"2. NO TEETH: In all 4 panels, the woman's lips MUST be sealed. NO TEETH visible. This is a strict rule.\n"
+            f"3. OUTFIT SHAPE: The garment MUST be a '{cloth_main}'. Ignore the shape of clothes in IMAGE 2.\n"
+            f"4. FABRIC DESIGN: Apply the colors, patterns, and specific decorative style (DNA) from IMAGE 2 onto the '{cloth_main}'. {cloth_detail}.\n\n"
+            f"### 2x2 GRID COMPOSITION:\n"
+            f"- TOP-LEFT: Full body, standing front pose, lips sealed.\n"
+            f"- TOP-RIGHT: Full body, walking side pose, lips sealed.\n"
+            f"- BOTTOM-LEFT: Full body, sitting pose, lips sealed.\n"
+            f"- BOTTOM-RIGHT: Close-up beauty shot of the face, lips sealed.\n\n"
+            f"### TECHNICAL:\n"
+            f"Background: {bg} with deep bokeh. 8k resolution, photorealistic masterpiece, sharp focus on subject."
         )
 
-        with st.spinner("黄金比で一括生成中..."):
+        with st.spinner("掟に従い、デザインを融合中..."):
             try:
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
                     contents=base_parts + [prompt],
                     config=types.GenerateContentConfig(
                         response_modalities=['IMAGE'],
-                        safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
-                        # ここが重要：全体も2:3にすることで、4分割した際も個々が2:3になる
+                        safety_settings=[
+                            types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
+                            types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
+                        ],
                         image_config=types.ImageConfig(aspect_ratio="2:3")
                     )
                 )
@@ -80,22 +84,14 @@ if check_password():
                     grid_data = response.candidates[0].content.parts[0].inline_data.data
                     full_img = Image.open(io.BytesIO(grid_data))
                     w, h = full_img.size
-                    
-                    # 4分割の座標（縦長グリッド用）
-                    coords = [
-                        (0, 0, w//2, h//2),     # 左上
-                        (w//2, 0, w, h//2),     # 右上
-                        (0, h//2, w//2, h),     # 左下
-                        (w//2, h//2, w, h)      # 右下
-                    ]
+                    coords = [(0, 0, w//2, h//2), (w//2, 0, w, h//2), (0, h//2, w//2, h), (w//2, h//2, w, h)]
+                    labels = ["正面全身", "動き全身", "座り姿", "顔寄り"]
                     
                     for i, coord in enumerate(coords):
                         with placeholders[i]:
-                            # 分割して表示
-                            cropped = full_img.crop(coord)
-                            st.image(cropped, caption=slots[i], use_container_width=True)
+                            cropped = full_img.crop(coord).resize((600, 900))
+                            st.image(cropped, caption=labels[i], use_container_width=True)
                             
-                            # ダウンロード
                             buf = io.BytesIO()
                             cropped.save(buf, format="JPEG")
                             st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"p{i+1}.jpg", mime="image/jpeg", key=f"btn_{i}")
@@ -105,4 +101,4 @@ if check_password():
                 st.error(f"エラー: {e}")
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Aspect-Perfect Engine")
+st.caption("© 2026 Karinto Group - Strict Rule Engine V1")
