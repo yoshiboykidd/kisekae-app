@@ -26,24 +26,23 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE [High Stability Mode]")
+    st.title("📸 AI KISEKAE [Identity Lock Mode]")
 
-    # 構図の定義（よりマイルドでプロフェッショナルな表現に）
+    # 4つの構図を物理的に定義
     POSE_SLOTS = {
-        "A: 正面（全身）": "A professional full-body fashion portrait, standing straight, facing forward. Studio lighting.",
-        "B: 動き（全身）": "A professional full-body fashion portrait, walking pose, dynamic movement. High-end fashion mood.",
-        "C: 座り（全身）": "A professional full-body fashion portrait, sitting gracefully on a designer chair. Elegant composition.",
-        "D: 寄り（バストアップ）": "A professional close-up beauty portrait, focusing on the face and shoulders. Soft lighting."
+        "A: 正面（全身）": "A formal full-body fashion shot, standing straight, facing forward.",
+        "B: 動き（全身）": "A dynamic full-body shot, walking or turning pose.",
+        "C: 座り（全身）": "A full-body shot sitting elegantly on a chair or floor.",
+        "D: 寄り（バストアップ）": "A beauty portrait shot from the chest up, focusing on the face."
     }
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
-        source_img = st.file_uploader("1. キャスト写真 (必須)", type=['png', 'jpg', 'jpeg'])
-        ref_img = st.file_uploader("2. 衣装参照写真 (任意)", type=['png', 'jpg', 'jpeg'])
+        source_img = st.file_uploader("1. キャスト写真 (顔：絶対遵守)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. 衣装参照画像 (柄：参考用)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        # カテゴリ名を少しマイルドに変更（AIの警戒を解くため）
-        cloth_main = st.selectbox("3. 基本スタイル", ["ワンピースドレス", "タイトミニドレス", "オフィスカジュアル", "ナーススタイル", "メイドスタイル", "スイムウェア", "浴衣"])
-        cloth_detail = st.text_input("衣装の追加指示", placeholder="例：黒のサテン生地、フリル付き")
+        cloth_main = st.selectbox("3. スタイル設定", ["ワンピースドレス", "タイトミニドレス", "オフィスカジュアル", "ナーススタイル", "メイドスタイル", "スイムウェア", "浴衣"])
+        cloth_detail = st.text_input("衣装の追加指示", placeholder="例：黒のサテン地、フリル付き")
         bg = st.selectbox("4. 背景", ["高級ホテル", "夜の街並み", "撮影スタジオ", "カフェテラス", "プライベートビーチ"])
         st.divider()
         run_button = st.button("✨ 4枚一括生成開始")
@@ -62,19 +61,26 @@ if check_password():
             with placeholders[i]:
                 with st.spinner(f"生成中... {i+1}/4"):
                     try:
-                        # フィルターに引っかかりにくい「プロフェッショナル・芸術」文脈の構築
-                        cloth_task = f"Wearing a high-quality {cloth_main}. {cloth_detail}."
+                        # 指示の強度を最大化するためのプロンプト構成
                         if ref_img:
-                            cloth_task = f"Wearing the identical style, color, and texture from IMAGE 2. High-quality {cloth_main}. {cloth_detail}."
+                            # 画像2の顔を「完全に無視しろ」と明文化
+                            cloth_task = (
+                                f"OUTFIT RULES: Strictly replicate the color, pattern, and texture from IMAGE 2. "
+                                f"But DO NOT use the face or person from IMAGE 2. "
+                                f"The final outfit must be a {cloth_main}. {cloth_detail}."
+                            )
+                        else:
+                            cloth_task = f"OUTFIT: A high-quality {cloth_main}. {cloth_detail}."
 
                         prompt = (
-                            f"A professional studio fashion photograph. "
-                            f"SUBJECT: The woman from IMAGE 1. Her facial features and identity must be exactly preserved. "
-                            f"COMPOSITION: {pose_instruction} "
-                            f"OUTFIT: {cloth_task} "
-                            f"ENVIRONMENT: {bg} with soft artistic bokeh. "
-                            f"EXPRESSION: Lips closed, elegant and calm look. No teeth visible. "
-                            f"STYLE: Photorealistic photography, 8k, high-end editorial, sharp focus on subject."
+                            f"STRICT INSTRUCTION 1 (FACE): You MUST generate the EXACT person from IMAGE 1. "
+                            f"Keep her face, eyes, hair, and identity 100% identical to IMAGE 1. "
+                            f"IGNORE any facial features from IMAGE 2. IMAGE 2 is only for cloth patterns. "
+                            f"STRICT INSTRUCTION 2 (OUTFIT): {cloth_task} "
+                            f"STRICT INSTRUCTION 3 (POSE): {pose_instruction} "
+                            f"STRICT INSTRUCTION 4 (FACE EXPRESSION): Lips MUST be sealed together. Do NOT show teeth. "
+                            f"ENVIRONMENT: {bg} with professional bokeh. "
+                            f"STYLE: Photorealistic 8k studio photography, sharp focus on subject."
                         )
 
                         response = client.models.generate_content(
@@ -82,12 +88,9 @@ if check_password():
                             contents=base_parts + [prompt],
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
-                                # 全ての安全設定を最も緩やかに
                                 safety_settings=[
                                     types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
-                                    types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
                                     types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
-                                    types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
                                 ],
                                 image_config=types.ImageConfig(aspect_ratio="2:3")
                             )
@@ -102,12 +105,11 @@ if check_password():
                             img.save(buf, format="JPEG")
                             st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"pose_{i+1}.jpg", mime="image/jpeg", key=f"btn_{i}")
                         else:
-                            st.error("AI規制によりブロックされました。服装や背景を変えてお試しください。")
+                            st.error("AI規制によりブロックされました。服装や背景を変えてみてください。")
                     except Exception as e:
                         st.error(f"エラー発生: {e}")
                     
-                    # サーバー負荷軽減のため待機時間を2秒に延長
-                    time.sleep(2.0)
+                    time.sleep(1.5)
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Identity Engine V3")
+st.caption("© 2026 Karinto Group - Identity Lock Engine V4")
