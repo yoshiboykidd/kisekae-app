@@ -26,20 +26,18 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE [Simple & Strict]")
+    st.title("📸 AI KISEKAE [Identity Lock V1]")
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
-        src_img = st.file_uploader("1. キャスト写真 (顔・絶対遵守)", type=['png', 'jpg', 'jpeg'])
-        # ラベルを変更し、役割を明確化
-        ref_img = st.file_uploader("2. 衣装参照写真 (あればこの服を着用)", type=['png', 'jpg', 'jpeg'])
+        src_img = st.file_uploader("1. キャスト写真 (顔・骨格：絶対遵守)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. 衣装写真 (あればこの服を100%着せる)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        # 参考画像がある場合は無視されることを注記
-        cloth_main = st.selectbox("3. スタイル (参考画像なしの場合のみ有効)", ["ワンピースドレス", "タイトミニドレス", "オフィスカジュアル", "ナースウェア", "メイドウェア", "サマー・リゾートウェア", "浴衣"])
-        cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン地、リボン (参考画像と併用可)")
-        bg = st.selectbox("4. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "サマー・リゾート地"])
+        cloth_main = st.selectbox("3. スタイル (参考画像なし時のみ有効)", ["ワンピースドレス", "タイトミニドレス", "ナースウェア", "メイドウェア", "サマーウェア", "浴衣"])
+        cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン地、ピンクのリボン")
+        bg = st.selectbox("4. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "サマーリゾート"])
         st.divider()
-        run_button = st.button("✨ シンプルに一括生成")
+        run_button = st.button("✨ 4枚一括生成")
 
     if run_button and src_img:
         st.subheader("🖼️ 生成結果")
@@ -50,38 +48,40 @@ if check_password():
         if ref_img:
             base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
 
-        # --- ロジックの単純化 ---
-        # 参考画像がある場合、スタイル選択(cloth_main)は完全に無視し、
-        # 「画像2の服を着ろ」とだけ指示する。
+        # --- シンプルな主従ロジック ---
+        # 1. 参考画像(ref_img)がある場合、ドロップダウン(cloth_main)は無視
         if ref_img:
-            outfit_instruction = f"WEAR THE EXACT OUTFIT shown in IMAGE 2. Ignore any other style setting. {cloth_detail}."
+            outfit_cmd = f"WEAR THE EXACT CLOTHES FROM IMAGE 2. {cloth_detail}."
         else:
-            outfit_instruction = f"WEAR A {cloth_main}. {cloth_detail}."
+            outfit_cmd = f"WEAR A {cloth_main}. {cloth_detail}."
 
-        # プロンプトを極限までシンプルかつ強力にする
-        # 絶対条件を冒頭に配置
+        # 2. プロンプトは「誰か」と「何を着るか」だけ
         prompt = (
-            f"ABSOLUTE RULES (MUST FOLLOW):\n"
-            f"1. IDENTITY: The person MUST be the woman from IMAGE 1. Keep her face and bone structure 100% IDENTICAL. Do not use the face from IMAGE 2.\n"
-            f"2. MOUTH: Lips MUST be sealed. NO TEETH visible.\n\n"
-            f"TASK:\n"
-            f"Create a 2x2 grid photo of this woman.\n"
-            f"OUTFIT: {outfit_instruction}\n"
-            f"BACKGROUND: {bg}.\n"
-            f"POSES: 4 different professional poses (Standing, Walking, Sitting, Close-up).\n"
-            f"QUALITY: 8k photorealistic studio portrait."
+            f"ABSOLUTE RULE: Subject is the person in IMAGE 1. Face and bone structure must be 100% identical to IMAGE 1. "
+            f"IGNORE the face in IMAGE 2. "
+            f"RULE: Lips sealed, no teeth. "
+            f"OUTFIT: {outfit_cmd} "
+            f"TASK: 2x2 grid of 4 poses (Standing, Walking, Sitting, Close-up). "
+            f"Background: {bg}. Photorealistic 8k."
         )
 
-        with st.spinner("絶対条件を遵守して生成中..."):
+        with st.spinner("キャストの顔を固定して生成中..."):
             try:
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
                     contents=base_parts + [prompt],
                     config=types.GenerateContentConfig(
                         response_modalities=['IMAGE'],
-                        # 安全設定は緩いまま維持（フィルター対策）
-                        safety_settings=[
-                            types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
-                        ],
-                        # 全体を2:3の比率で生成
-                        image_config=types.ImageConfig(aspect_ratio="
+                        safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
+                        image_config=types.ImageConfig(aspect_ratio="2:3")
+                    )
+                )
+
+                if response.candidates and response.candidates[0].content.parts:
+                    grid_data = response.candidates[0].content.parts[0].inline_data.data
+                    full_img = Image.open(io.BytesIO(grid_data))
+                    w, h = full_img.size
+                    # 黄金比2:3での分割
+                    coords = [(0, 0, w//2, h//2), (w//2, 0, w, h//2), (0, h//2, w//2, h), (w//2, h//2, w, h)]
+                    
+                    for i, coord in enumerate(coords):
