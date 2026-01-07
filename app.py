@@ -5,7 +5,7 @@ from PIL import Image
 import io
 import time
 
-# --- 1. 認証機能 (karin10) ---
+# --- 1. 認証機能 (合言葉: karin10) ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -41,21 +41,22 @@ if check_password():
 
     if run_button and src_img:
         st.subheader("🖼️ 生成結果")
-        cols = [st.columns(2), st.columns(2)]
-        placeholders = [cols[0][0], cols[0][1], cols[1][0], cols[1][1]]
+        cols_row1 = st.columns(2)
+        cols_row2 = st.columns(2)
+        placeholders = [cols_row1[0], cols_row1[1], cols_row2[0], cols_row2[1]]
 
         base_parts = [types.Part.from_bytes(data=src_img.getvalue(), mime_type='image/jpeg')]
         if ref_img:
             base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
 
         # --- シンプルな主従ロジック ---
-        # 1. 参考画像(ref_img)がある場合、ドロップダウン(cloth_main)は無視
+        # 参照画像(Image 2)がある場合は、セレクトボックスの項目を無視する
         if ref_img:
             outfit_cmd = f"WEAR THE EXACT CLOTHES FROM IMAGE 2. {cloth_detail}."
         else:
             outfit_cmd = f"WEAR A {cloth_main}. {cloth_detail}."
 
-        # 2. プロンプトは「誰か」と「何を着るか」だけ
+        # 命令の優先順位を「Identity」に一点集中
         prompt = (
             f"ABSOLUTE RULE: Subject is the person in IMAGE 1. Face and bone structure must be 100% identical to IMAGE 1. "
             f"IGNORE the face in IMAGE 2. "
@@ -81,7 +82,34 @@ if check_password():
                     grid_data = response.candidates[0].content.parts[0].inline_data.data
                     full_img = Image.open(io.BytesIO(grid_data))
                     w, h = full_img.size
-                    # 黄金比2:3での分割
-                    coords = [(0, 0, w//2, h//2), (w//2, 0, w, h//2), (0, h//2, w//2, h), (w//2, h//2, w, h)]
+                    
+                    # 4分割の座標設定
+                    coords = [
+                        (0, 0, w//2, h//2),     # 左上
+                        (w//2, 0, w, h//2),     # 右上
+                        (0, h//2, w//2, h),     # 左下
+                        (w//2, h//2, w, h)      # 右下
+                    ]
                     
                     for i, coord in enumerate(coords):
+                        with placeholders[i]:
+                            # 切り出して2:3の縦長にリサイズして表示
+                            cropped = full_img.crop(coord).resize((600, 900))
+                            st.image(cropped, use_container_width=True)
+                            
+                            buf = io.BytesIO()
+                            cropped.save(buf, format="JPEG")
+                            st.download_button(
+                                label=f"保存 {i+1}", 
+                                data=buf.getvalue(), 
+                                file_name=f"p{i+1}.jpg", 
+                                mime="image/jpeg", 
+                                key=f"dl_btn_{i}"
+                            )
+                else:
+                    st.error("AI規制によりブロックされました。マイルドな表現でお試しください。")
+            except Exception as e:
+                st.error(f"エラー: {e}")
+
+st.markdown("---")
+st.caption("© 2026 Karinto Group - Identity Lock V1")
