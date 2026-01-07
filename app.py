@@ -27,9 +27,9 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE Manager [Reference Mode]")
+    st.title("📸 AI KISEKAE Manager [Hybrid Design Mode]")
 
-    # 大胆なポーズ集
+    # 大胆なポーズ集 (大胆な動きとアングルを強化)
     POSE_LIBRARY = {
         "Standard (王道)": [
             "Full body shot, walking toward camera, dress fluttering.",
@@ -64,12 +64,15 @@ if check_password():
         source_img = st.file_uploader("1. キャスト写真 (必須)", type=['png', 'jpg', 'jpeg'])
         ref_img = st.file_uploader("2. 服装写真 (任意)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        cloth_main = st.selectbox("3. 服装系統", ["清楚ワンピース", "タイトミニドレス", "ナース服", "バニーガール", "メイド服", "リゾートビキニ", "浴衣"])
-        cloth_detail = st.text_input("詳細指定", placeholder="例：黒サテン、赤リボン")
+        cloth_main = st.selectbox("3. 基本スタイル", ["清楚ワンピース", "タイトミニドレス", "ナース服", "バニーガール", "メイド服", "リゾートビキニ", "浴衣"])
+        
+        # ここでの入力が「変更指示」として機能します
+        cloth_detail = st.text_input("色・素材・変更の指示", placeholder="例：色はロイヤルブルーに変更、袖を短く")
+        
         vibe_choice = st.selectbox("4. Vibe", list(POSE_LIBRARY.keys()))
         bg = st.selectbox("5. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "ビーチ"])
         st.divider()
-        run_button = st.button("✨ 4枚一括生成")
+        run_button = st.button("✨ 4枚一括デザイン開始")
 
     if run_button and source_img:
         selected_poses = random.sample(POSE_LIBRARY[vibe_choice], 4)
@@ -85,17 +88,23 @@ if check_password():
             with placeholders[i]:
                 with st.spinner(f"生成中... {i+1}/4"):
                     try:
-                        cloth_task = f"High-quality {cloth_main}. {cloth_detail}."
+                        # 参照画像＋テキスト指示のハイブリッドロジック
                         if ref_img:
-                            cloth_task = f"REPLICATE the EXACT outfit from IMAGE 2. {cloth_main}, {cloth_detail}."
+                            cloth_task = (
+                                f"Based on the outfit in IMAGE 2, apply these specific modifications: {cloth_detail}. "
+                                f"Maintain the basic silhouette of IMAGE 2 but prioritize the color and design changes mentioned in '{cloth_detail}'."
+                            )
+                        else:
+                            cloth_task = f"A high-quality {cloth_main}. {cloth_detail}."
 
                         prompt = (
-                            f"TASK: Keeping face of IMAGE 1, change outfit and background. "
-                            f"COMPOSITION: {pose_text} OUTFIT: {cloth_task} "
-                            f"BACKGROUND: {bg} with bokeh. "
-                            f"RULES: LIPS SEALED, NO TEETH. Sharp focus on person. "
-                            f"IDENTITY: Exact facial features of woman in IMAGE 1. "
-                            f"QUALITY: 8k, photorealistic masterpiece."
+                            f"TASK: Keeping face and identity of IMAGE 1, generate a professional photo. "
+                            f"COMPOSITION: {pose_text} "
+                            f"OUTFIT: {cloth_task} "
+                            f"BACKGROUND: {bg} with intense professional bokeh. "
+                            f"RULES: LIPS SEALED, NO TEETH VISIBLE. Sharp razor focus on the person. " # 黄金ルール
+                            f"IDENTITY: Strictly preserve the facial features of the woman in IMAGE 1."
+                            f"QUALITY: 8k, photorealistic studio photography, masterpiece."
                         )
 
                         response = client.models.generate_content(
@@ -104,7 +113,7 @@ if check_password():
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
                                 safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
-                                image_config=types.ImageConfig(aspect_ratio="2:3")
+                                image_config=types.ImageConfig(aspect_ratio="2:3") # 黄金比
                             )
                         )
 
@@ -113,7 +122,6 @@ if check_password():
                             img = Image.open(io.BytesIO(img_data)).resize((600, 900))
                             st.image(img, use_container_width=True)
                             
-                            # ダウンロードボタンの構文を安全に記述
                             buf = io.BytesIO()
                             img.save(buf, format="JPEG")
                             btn_name = f"pose_{i+1}.jpg"
@@ -125,4 +133,4 @@ if check_password():
                     time.sleep(1)
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Reference Image Engine")
+st.caption("© 2026 Karinto Group - Hybrid Design Engine")
