@@ -14,7 +14,7 @@ def check_password():
         st.title("🔐 Karinto Group Image Tool")
         pwd = st.text_input("合言葉を入力してください", type="password")
         if st.button("ログイン"):
-            if pwd == "karin10": 
+            if pwd == "karinto": 
                 st.session_state["password_correct"] = True
                 st.rerun()
             else:
