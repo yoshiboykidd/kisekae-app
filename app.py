@@ -27,39 +27,39 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE Manager [Vibe & Random Pose]")
+    st.title("📸 AI KISEKAE Manager [Dynamic 4-Pose]")
 
-    # --- ポーズ・ライブラリ (Vibeごとに定義) ---
+    # --- 大胆に進化したポーズ・ライブラリ ---
     POSE_LIBRARY = {
         "Standard (王道)": [
-            "Full body shot, standing straight, facing forward.",
-            "Full body shot, posing from a 45-degree angle, hand on hip.",
-            "Full body shot, sitting gracefully on a chair.",
-            "Full body shot, looking back over the shoulder.",
-            "Full body shot, leaning slightly forward with a natural smile.",
-            "Full body shot, standing with legs crossed elegantly.",
-            "Full body shot, sitting on the floor with legs tucked.",
-            "Full body shot, walking toward the camera naturally."
+            "Full body shot, walking confidently toward the camera, dress fluttering.", # 動き
+            "High angle full body shot, looking up at the camera with a bright expression.", # アングル
+            "Full body shot, sitting on a high stool, one leg stretched forward elegantly.", # 重心
+            "Full body shot, leaning against a luxury car or marble pillar.", # 奥行き
+            "Full body shot, captured from the side, looking back with a soft smile.",
+            "Full body shot, standing with a slight twist in the waist to emphasize curves.",
+            "Full body shot, sitting on stairs, legs positioned at different levels.",
+            "Full body shot, reaching out a hand toward the camera naturally."
         ],
-        "Cool & Elegant (綺麗め)": [
-            "Full body shot, leaning against a wall with a cool expression.",
-            "Full body shot, arms crossed, looking at the camera with sharp eyes.",
-            "Full body shot, sitting on a high stool with one leg extended.",
-            "Full body shot, adjusting hair with one hand, looking away.",
-            "Full body shot, hand in pocket, standing with a confident posture.",
-            "Full body shot, professional model pose, highlighting the body line.",
-            "Full body shot, walking away and looking back sharply.",
-            "Full body shot, sitting in a luxury sofa, looking dignified."
+        "Cool & Sexy (大胆・綺麗め)": [
+            "Dramatic low angle full body shot, looking down at the camera with a sharp gaze.", # 強気アングル
+            "Full body shot, sitting on the floor with legs crossed, leaning back on hands.", # フロアポーズ
+            "Full body shot, back view, looking over the shoulder with a bold expression.", # 背中
+            "Full body shot, lying on a luxury sofa, showcasing a long body line.", # 寝そべり
+            "Full body shot, leaning against a wall with one knee bent and foot up.", # 立体感
+            "Full body shot, powerful model walk, captured in mid-stride.",
+            "Full body shot, squatting elegantly in a high-fashion pose.",
+            "Full body shot, arched back, arms raised slightly to highlight the silhouette."
         ],
-        "Cute & Sweet (可愛い)": [
-            "Full body shot, hands on cheeks, tilted head, cute expression.",
-            "Full body shot, playing with hair, looking shy but charming.",
-            "Full body shot, sitting with knees hugged, looking up at the camera.",
-            "Full body shot, blowing a small kiss or waving hand gently.",
-            "Full body shot, holding a small accessory, bright and airy mood.",
-            "Full body shot, spinning slowly, skirt fluttering slightly.",
-            "Full body shot, sitting on the edge of a bed, soft and sweet pose.",
-            "Full body shot, peeking from behind a door or curtain."
+        "Cute & Active (動きのある可愛さ)": [
+            "Full body shot, jumping slightly or skipping with a joyful expression.", # 躍動感
+            "Full body shot, twirling around, skirt expanding in a circle.", # 動き
+            "Full body shot, kneeling on a soft carpet, holding a plush pillow.", # 幼さ
+            "Full body shot, crouching down and peeking into the camera lens.", # 寄り
+            "Full body shot, running gently on a beach, hair wind-blown and messy-cute.",
+            "Full body shot, sitting on a swing or garden bench, legs swinging.",
+            "Full body shot, hugging herself gently, tilted head and winking.",
+            "Full body shot, hands in hair, leaning back with a playful laugh."
         ]
     }
 
@@ -70,16 +70,13 @@ if check_password():
         cloth_main = st.selectbox("2. 服装の系統", ["清楚ワンピース", "タイトミニドレス", "ナース服", "バニーガール", "メイド服", "リゾートビキニ", "浴衣"])
         cloth_detail = st.text_input("詳細指定（色、素材など）", placeholder="例：黒のサテン地、赤いリボン")
         
-        # Vibeの選択
         vibe_choice = st.selectbox("3. ポーズの雰囲気 (Vibe)", list(POSE_LIBRARY.keys()))
-        
         bg = st.selectbox("4. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "ビーチ"])
         
         st.divider()
-        run_button = st.button("✨ 4枚一括生成（ポーズはランダム）")
+        run_button = st.button("✨ 大胆な4枚を生成")
 
     if run_button and source_img:
-        # 選択されたVibeからランダムに4つ抽出
         selected_poses = random.sample(POSE_LIBRARY[vibe_choice], 4)
         
         st.subheader(f"🖼️ 生成結果 [{vibe_choice}]")
@@ -89,18 +86,17 @@ if check_password():
 
         for i, pose_text in enumerate(selected_poses):
             with placeholders[i]:
-                with st.spinner(f"デザイン {i+1} を生成中..."):
+                with st.spinner(f"デザイン {i+1}..."):
                     try:
-                        # 不変の黄金ルールを統合したプロンプト
                         prompt = (
                             f"IMAGE EDITING TASK: Change clothes and background while keeping the face. "
                             f"COMPOSITION: {pose_text} " 
                             f"OUTFIT: A high-quality {cloth_main}. {cloth_detail}. "
                             f"BACKGROUND: {bg} with professional bokeh blur. "
-                            f"MOUTH (STRICT): LIPS MUST BE SEALED TOGETHER. NO TEETH VISIBLE. " # 歯出し禁止
-                            f"FOCUS: Razor-sharp focus on the entire person. No blur on the subject. " # 人物シャープ化
-                            f"IDENTITY: Keep the exact facial features and bone structure of the Japanese woman in the reference." 
-                            f"QUALITY: Photorealistic photography, 8k, professional studio lighting, masterpiece."
+                            f"MOUTH (STRICT): LIPS MUST BE SEALED TOGETHER. NO TEETH VISIBLE. "
+                            f"FOCUS: Razor-sharp focus on the entire person. No blur on the subject. "
+                            f"IDENTITY: Keep the exact facial features of the Japanese woman in the reference."
+                            f"QUALITY: Photorealistic photography, 8k, masterpiece."
                         )
 
                         response = client.models.generate_content(
@@ -122,10 +118,10 @@ if check_password():
                             img.save(buf, format="JPEG")
                             st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"pose_{i+1}.jpg", mime="image/jpeg")
                         else:
-                            st.error(f"生成失敗: フィルター制限")
+                            st.error(f"生成失敗")
                     except Exception as e:
                         st.error(f"エラー: {e}")
                     time.sleep(1)
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Antigravity Powered Tool")
+st.caption("© 2026 Karinto Group - Dynamic Pose Engine")
