@@ -26,18 +26,19 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE [Identity Lock V2]")
+    st.title("📸 AI KISEKAE [Ultimate Identity V3]")
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
-        src_img = st.file_uploader("1. キャスト写真 (顔・骨格：100%遵守)", type=['png', 'jpg', 'jpeg'])
-        ref_img = st.file_uploader("2. 衣装写真 (布の柄・色のみ引用)", type=['png', 'jpg', 'jpeg'])
+        # ラベルで重要性を強調
+        src_img = st.file_uploader("1. キャスト写真 (【最重要】顔の生体データ源)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. 衣装写真 (柄・色の見本)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        cloth_main = st.selectbox("3. スタイル", ["ワンピースドレス", "タイトミニドレス", "オフィスカジュアル", "ナースウェア", "メイドウェア", "サマー・リゾートウェア", "浴衣"])
+        cloth_main = st.selectbox("3. スタイル", ["サマー・リゾートウェア", "タイトミニドレス", "ワンピースドレス", "ナースウェア", "メイドウェア", "浴衣"])
         cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン地、ピンクのリボン")
         bg = st.selectbox("4. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "サマー・リゾート地"])
         st.divider()
-        run_button = st.button("✨ 顔を固定して一括生成")
+        run_button = st.button("✨ 生体認証レベルで生成")
 
     if run_button and src_img:
         st.subheader("🖼️ 生成結果")
@@ -48,22 +49,20 @@ if check_password():
         if ref_img:
             base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
 
-        # AIへの役割分担を「人間」と「物体」に完全に切り分けるプロンプト
+        # AIへの最終通告プロンプト
+        # "Biometric Match"（生体認証的一致）という強い言葉を使用
         prompt = (
-            f"STRICT ROLE ASSIGNMENT:\n"
-            f"1. SUBJECT: The woman in IMAGE 1 is the ONLY subject. Her face, facial features, and bone structure MUST be 100% identical to IMAGE 1 in all panels.\n"
-            f"2. REFERENCE: IMAGE 2 is NOT a person. Treat IMAGE 2 ONLY as a texture and color pattern for the fabric.\n"
-            f"3. OUTFIT: Wear a {cloth_main} using the exact pattern and DNA from IMAGE 2. {cloth_detail}.\n"
-            f"4. RULES: LIPS SEALED, NO TEETH. Consistent identity across 4 panels.\n\n"
-            f"POSES IN 2x2 GRID:\n"
-            f"- Top-Left: Full body standing front.\n"
-            f"- Top-Right: Full body walking side.\n"
-            f"- Bottom-Left: Full body sitting elegantly.\n"
-            f"- Bottom-Right: Face close-up portrait.\n\n"
-            f"QUALITY: Photorealistic 8k, professional studio lighting, sharp focus. Background: {bg}."
+            f"CRITICAL OPERATION: BIOMETRIC IDENTITY TRANSFER.\n"
+            f"SOURCE 1 (IDENTITY): The person in IMAGE 1. The final images MUST be a PERFECT BIOMETRIC MATCH to this person's exact facial structure, eyes, nose, and mouth. It is NOT a 'similar' person; it is the EXACT SAME person.\n"
+            f"SOURCE 2 (STYLE DNA): IMAGE 2 is ONLY used for fabric patterns and colors. DO NOT blend the face from IMAGE 2.\n"
+            f"TASK: Create a 2x2 grid photograph.\n"
+            f"OUTFIT: A {cloth_main} featuring the exact textile pattern and color palette from SOURCE 2. {cloth_detail}.\n"
+            f"POSES: [TL: Standing Front], [TR: Walking Side], [BL: Sitting], [BR: Close-up Portrait].\n"
+            f"MANDATORY RULES: Lips sealed (no teeth). Skin texture must be preserved from IMAGE 1.\n"
+            f"QUALITY: 8k photorealistic studio portrait. Background: {bg}."
         )
 
-        with st.spinner("キャストの顔をロックして生成中..."):
+        with st.spinner("生体データを解析し、超高精度生成中..."):
             try:
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
@@ -98,4 +97,4 @@ if check_password():
                 st.error(f"システムエラー: {e}")
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Identity Lock V2")
+st.caption("© 2026 Karinto Group - Ultimate Identity V3")
