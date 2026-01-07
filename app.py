@@ -4,7 +4,7 @@ from google.genai import types
 from PIL import Image
 import io
 import time
-import random
+import random # randomは使わなくなりましたが、念のため残します
 
 # --- 1. 認証機能 (karin10) ---
 def check_password():
@@ -27,29 +27,29 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE [High-Consistency Mode]")
+    st.title("📸 AI KISEKAE [Identity & Pose Fix]")
 
-    # 構図の「スロット」を定義し、被りを物理的に排除
+    # 構図の定義を、より極端で物理的に異なるものに変更 [対策3]
     POSE_SLOTS = {
-        "A: 全身立ち姿": "A full-length standing shot from the front, showing the entire outfit.",
-        "B: 斜め・動き": "A 45-degree angle dynamic shot, walking or posing with one hand on hip.",
-        "C: 座り・床ポーズ": "A shot of the person sitting elegantly on a chair or floor, showcasing the dress flow.",
-        "D: クローズアップ": "A waist-up close-up shot, focusing on the face and upper body details."
+        "A: 直立不動（全身）": "A static full-body shot standing perfectly straight, facing the camera. Like a fashion mannequin pose, showing the whole outfit evenly.",
+        "B: 動き・歩行（全身）": "A dynamic full-body shot captured mid-stride while walking actively. The body is angled, showing motion and energy.",
+        "C: 深い座り（全身）": "A full-body shot sitting down deeply on a chair or directly on the floor. Legs are bent or crossed. Not standing.",
+        "D: 寄り（バストアップ）": "A close-up portrait shot from the chest up. Focusing entirely on the face, shoulders, and neckline. This is NOT a full body shot."
     }
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
-        source_img = st.file_uploader("1. キャスト写真 (必須)", type=['png', 'jpg', 'jpeg'])
-        ref_img = st.file_uploader("2. スタイル参照画像 (任意)", type=['png', 'jpg', 'jpeg'])
+        source_img = st.file_uploader("1. キャスト写真 (顔用・必須)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. 衣装参照写真 (柄用・任意)", type=['png', 'jpg', 'jpeg'])
         st.divider()
         cloth_main = st.selectbox("3. スタイル設定", ["リゾートビキニ", "タイトミニドレス", "清楚ワンピース", "ナース服", "バニーガール", "メイド服", "浴衣"])
         cloth_detail = st.text_input("衣装の追加指示", placeholder="例：黒のレース素材、赤いリボン")
         bg = st.selectbox("4. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "ビーチ"])
         st.divider()
-        run_button = st.button("✨ 4ポーズを完全分離生成")
+        run_button = st.button("✨ 4ポーズを生成")
 
     if run_button and source_img:
-        st.subheader("🖼️ 生成結果 (ポーズ分離・衣装固定)")
+        st.subheader("🖼️ 生成結果 (顔固定・ポーズ分離)")
         cols = [st.columns(2), st.columns(2)]
         placeholders = [cols[0][0], cols[0][1], cols[1][0], cols[1][1]]
 
@@ -62,23 +62,26 @@ if check_password():
             with placeholders[i]:
                 with st.spinner(f"生成中: {slot_name}"):
                     try:
-                        # 衣装の「完全固定」をAIに命じる
+                        # 衣装指示の構築
                         if ref_img:
                             cloth_task = (
-                                f"FIXED OUTFIT: You must replicate the IDENTICAL outfit from IMAGE 2. "
-                                f"Do not change colors, patterns, or materials. It is a {cloth_main}. "
-                                f"Apply every detail of the '{cloth_detail}' consistently across this image."
+                                f"OUTFIT SOURCE: Replicate the EXACT outfit (color, pattern, material) from IMAGE 2. "
+                                f"Apply it to a {cloth_main} style. {cloth_detail}."
                             )
                         else:
-                            cloth_task = f"A consistent {cloth_main}. {cloth_detail}."
+                            cloth_task = f"OUTFIT: A high-quality {cloth_main}. {cloth_detail}."
 
+                        # プロンプトの構造を根本的に見直し [対策2]
+                        # アイデンティティの維持を最優先事項として冒頭に配置
                         prompt = (
-                            f"TASK: Generate a photo of the woman from IMAGE 1. "
-                            f"COMPOSITION: {pose_instruction} " # スロット別の構図
-                            f"OUTFIT: {cloth_task} "
-                            f"BACKGROUND: {bg} with intense professional bokeh. "
-                            f"FACE RULES: LIPS SEALED, NO TEETH. Strictly identical to IMAGE 1. "
-                            f"QUALITY: 8k, photorealistic masterpiece, sharp focus on subject."
+                            f"PRIMARY TASK (CRITICAL): Generate a photorealistic photograph of the woman from IMAGE 1. "
+                            f"Her facial features and identity MUST be strictly preserved from IMAGE 1. "
+                            f"Do NOT use the person's face from IMAGE 2; IMAGE 2 is ONLY for outfit reference. "
+                            f"COMPOSITION (PHYSICAL STATE): {pose_instruction} " # 具体的な物理状態を指定
+                            f"{cloth_task} " # 衣装指示
+                            f"BACKGROUND: {bg} with professional bokeh blur. "
+                            f"FACE EXPRESSION: LIPS SEALED TOGETHER. NO TEETH VISIBLE. Elegant look. "
+                            f"QUALITY: 8k, masterpiece, sharp focus on the subject."
                         )
 
                         response = client.models.generate_content(
@@ -98,10 +101,14 @@ if check_password():
                             
                             buf = io.BytesIO()
                             img.save(buf, format="JPEG")
-                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"p_{i+1}.jpg", mime="image/jpeg", key=f"btn_{i}")
+                            # ダウンロードボタンのkeyを一意にする
+                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"p_{i+1}.jpg", mime="image/jpeg", key=f"dl_btn_{i}")
+                        else:
+                            st.error("生成失敗: フィルターまたはエラー")
                     except Exception as e:
                         st.error(f"エラー: {e}")
-                    time.sleep(1.5) # AIの思考をリセットするために少し待ち時間を延長
+                    # インターバルは少し短くしても大丈夫かもしれません。試行錯誤点です。
+                    time.sleep(1.0) 
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - High-Consistency Pose Engine")
+st.caption("© 2026 Karinto Group - Identity Protected Engine")
