@@ -27,13 +27,58 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE Manager [Ultimate Hybrid]")
+    st.title("📸 AI KISEKAE Manager [Pose Master Edition]")
 
-    # 大胆なポーズ集
+    # --- 拡張されたポーズ・ライブラリ ---
     POSE_LIBRARY = {
-        "Standard (王道)": ["Full body shot, walking toward camera, dress fluttering.", "High angle full body shot, looking up.", "Full body shot, sitting on stool.", "Full body shot, leaning against pillar."],
-        "Cool & Sexy (大胆)": ["Low angle full body shot, sharp gaze.", "Full body shot, sitting on floor, leaning back.", "Full body shot, back view, bold look over shoulder.", "Full body shot, lying on luxury sofa."],
-        "Cute & Active (動き)": ["Full body shot, jumping slightly, joyful.", "Full body shot, twirling around, skirt expanding.", "Full body shot, kneeling on carpet, holding pillow.", "Full body shot, crouching and peeking."]
+        "Standard (王道全身)": [
+            "Full body shot, standing straight, facing forward.",
+            "Full body shot, walking confidently toward the camera.",
+            "Full body shot, posing from a 45-degree angle, hand on hip.",
+            "Full body shot, standing with legs crossed elegantly.",
+            "Full body shot, leaning against a luxury pillar.",
+            "Full body shot, captured from the side, looking back with a smile."
+        ],
+        "Cool & Sexy (大胆・綺麗め)": [
+            "Dramatic low angle full body shot, looking down at the camera.",
+            "Full body shot, back view, bold look over the shoulder.",
+            "Full body shot, powerful model walk stride.",
+            "Full body shot, leaning against a wall with one knee bent.",
+            "Full body shot, arched back slightly to highlight the silhouette.",
+            "Full body shot, squatting elegantly in a high-fashion pose."
+        ],
+        "Cute & Sweet (可愛い・動き)": [
+            "Full body shot, jumping slightly with a joyful expression.",
+            "Full body shot, twirling around, skirt expanding.",
+            "Full body shot, hands on cheeks, tilted head.",
+            "Full body shot, playing with hair, looking charming.",
+            "Full body shot, hugging herself gently, winking.",
+            "Full body shot, running gently, hair wind-blown."
+        ],
+        "Lying & Floor (寝そべり・床座り)": [
+            "Full body shot, lying on a luxury sofa, showcasing a long body line.",
+            "Full body shot, sitting on the floor with legs crossed, leaning back.",
+            "Full body shot, kneeling on a soft carpet, looking into the camera.",
+            "Full body shot, lying on a bed with a relaxed and inviting pose.",
+            "Full body shot, sitting on the edge of a pool, legs in water.",
+            "Full body shot, crouching low on the ground, high-fashion style."
+        ],
+        "Close-up & Face (顔寄り・表情重視)": [
+            "Extreme close-up, focusing on the face and shoulders, intense gaze.",
+            "Waist-up shot, hand near the face, highlighting the jewelry and expression.",
+            "Close-up, looking through the fingers, mysterious mood.",
+            "Upper body shot, leaning forward toward the camera lens.",
+            "Profile shot, focusing on the facial line and neck.",
+            "Close-up, chin resting on hands, soft and dreamy look."
+        ],
+        "Artistic & Dynamic (芸術的・大胆)": [
+            "Full body shot, captured from a very high bird's-eye view.",
+            "Full body shot, silhouette pose against a bright window.",
+            "Full body shot, motion blur effect to show rapid movement.",
+            "Full body shot, dramatic lighting with heavy shadows, mysterious pose.",
+            "Full body shot, interacting with a luxury prop like a velvet curtain.",
+            "Full body shot, posing like a statue, avant-garde style."
+        ]
     }
 
     with st.sidebar:
@@ -42,13 +87,14 @@ if check_password():
         ref_img = st.file_uploader("2. スタイル参照画像 (任意)", type=['png', 'jpg', 'jpeg'])
         st.divider()
         cloth_main = st.selectbox("3. 強制するスタイル（形）", ["リゾートビキニ", "タイトミニドレス", "清楚ワンピース", "ナース服", "バニーガール", "メイド服", "浴衣"])
-        cloth_detail = st.text_input("追加の指示", placeholder="例：フリル多め、色は黒に変更")
-        vibe_choice = st.selectbox("4. Vibe", list(POSE_LIBRARY.keys()))
+        cloth_detail = st.text_input("追加の指示", placeholder="例：フリル多め、地雷系デザインを移植")
+        vibe_choice = st.selectbox("4. Vibe (ポーズ集)", list(POSE_LIBRARY.keys()))
         bg = st.selectbox("5. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "ビーチ"])
         st.divider()
-        run_button = st.button("✨ スタイルを融合して生成")
+        run_button = st.button("✨ 4枚一括生成開始")
 
     if run_button and source_img:
+        # 選択されたVibeからランダムに4つ抽出
         selected_poses = random.sample(POSE_LIBRARY[vibe_choice], 4)
         st.subheader(f"🖼️ 生成結果 [{vibe_choice}]")
         cols = [st.columns(2), st.columns(2)]
@@ -60,27 +106,26 @@ if check_password():
 
         for i, pose_text in enumerate(selected_poses):
             with placeholders[i]:
-                with st.spinner(f"融合デザイン中... {i+1}/4"):
+                with st.spinner(f"生成中... {i+1}/4"):
                     try:
-                        # 融合ロジックを極限まで強化
+                        # スタイル融合ロジック
                         if ref_img:
-                            # 参照画像からは「デザイン要素」だけを抽出し、ベーススタイル（水着など）に適用させる指示
                             cloth_task = (
                                 f"Create a HYBRID OUTFIT. The SHAPE must be a {cloth_main}. "
-                                f"STRICTLY APPLY the visual elements (color palette, patterns, ribbons, lace, and aesthetic) from IMAGE 2 onto this {cloth_main}. "
+                                f"STRICTLY APPLY the visual elements (color palette, patterns, ribbons, lace) from IMAGE 2 onto this {cloth_main}. "
                                 f"Do NOT copy the clothing shape from IMAGE 2; only use its style DNA. {cloth_detail}."
                             )
                         else:
                             cloth_task = f"A high-quality {cloth_main}. {cloth_detail}."
 
                         prompt = (
-                            f"TASK: Keeping the face and body of IMAGE 1, generate a professional studio photo. "
+                            f"TASK: Keeping the exact face of IMAGE 1, generate a professional photo. "
                             f"COMPOSITION: {pose_text} "
                             f"OUTFIT: {cloth_task} "
-                            f"BACKGROUND: {bg} with intense bokeh. "
-                            f"RULES: LIPS SEALED, NO TEETH VISIBLE. Razor-sharp focus on the person. " # 黄金ルール
+                            f"BACKGROUND: {bg} with professional bokeh. "
+                            f"RULES: LIPS SEALED, NO TEETH VISIBLE. Razor-sharp focus on the subject. " # 黄金ルール
                             f"IDENTITY: Strictly preserve the facial features of the woman in IMAGE 1."
-                            f"QUALITY: 8k, photorealistic masterpiece."
+                            f"QUALITY: 8k, photorealistic studio photography, masterpiece."
                         )
 
                         response = client.models.generate_content(
@@ -108,4 +153,4 @@ if check_password():
                     time.sleep(1)
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Style Fusion Engine")
+st.caption("© 2026 Karinto Group - Ultimate Pose Library")
