@@ -27,52 +27,26 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE Manager [Hybrid Design Mode]")
+    st.title("📸 AI KISEKAE Manager [Ultimate Hybrid]")
 
-    # 大胆なポーズ集 (大胆な動きとアングルを強化)
+    # 大胆なポーズ集
     POSE_LIBRARY = {
-        "Standard (王道)": [
-            "Full body shot, walking toward camera, dress fluttering.",
-            "High angle full body shot, looking up at camera.",
-            "Full body shot, sitting on high stool, one leg stretched.",
-            "Full body shot, leaning against marble pillar.",
-            "Full body shot, side view, looking back with a smile.",
-            "Full body shot, standing with a slight twist in waist.",
-            "Full body shot, sitting on stairs, legs at different levels."
-        ],
-        "Cool & Sexy (大胆)": [
-            "Low angle full body shot, sharp gaze downward.",
-            "Full body shot, sitting on floor, leaning back on hands.",
-            "Full body shot, back view, bold look over shoulder.",
-            "Full body shot, lying on luxury sofa, long body line.",
-            "Full body shot, leaning against wall, one knee bent.",
-            "Full body shot, powerful model walk stride.",
-            "Full body shot, squatting in high-fashion pose."
-        ],
-        "Cute & Active (動き)": [
-            "Full body shot, jumping slightly, joyful expression.",
-            "Full body shot, twirling around, skirt expanding.",
-            "Full body shot, kneeling on carpet, holding pillow.",
-            "Full body shot, crouching and peeking into camera.",
-            "Full body shot, running on beach, wind-blown hair.",
-            "Full body shot, sitting on swing, legs swinging."
-        ]
+        "Standard (王道)": ["Full body shot, walking toward camera, dress fluttering.", "High angle full body shot, looking up.", "Full body shot, sitting on stool.", "Full body shot, leaning against pillar."],
+        "Cool & Sexy (大胆)": ["Low angle full body shot, sharp gaze.", "Full body shot, sitting on floor, leaning back.", "Full body shot, back view, bold look over shoulder.", "Full body shot, lying on luxury sofa."],
+        "Cute & Active (動き)": ["Full body shot, jumping slightly, joyful.", "Full body shot, twirling around, skirt expanding.", "Full body shot, kneeling on carpet, holding pillow.", "Full body shot, crouching and peeking."]
     }
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
         source_img = st.file_uploader("1. キャスト写真 (必須)", type=['png', 'jpg', 'jpeg'])
-        ref_img = st.file_uploader("2. 服装写真 (任意)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. スタイル参照画像 (任意)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        cloth_main = st.selectbox("3. 基本スタイル", ["清楚ワンピース", "タイトミニドレス", "ナース服", "バニーガール", "メイド服", "リゾートビキニ", "浴衣"])
-        
-        # ここでの入力が「変更指示」として機能します
-        cloth_detail = st.text_input("色・素材・変更の指示", placeholder="例：色はロイヤルブルーに変更、袖を短く")
-        
+        cloth_main = st.selectbox("3. 強制するスタイル（形）", ["リゾートビキニ", "タイトミニドレス", "清楚ワンピース", "ナース服", "バニーガール", "メイド服", "浴衣"])
+        cloth_detail = st.text_input("追加の指示", placeholder="例：フリル多め、色は黒に変更")
         vibe_choice = st.selectbox("4. Vibe", list(POSE_LIBRARY.keys()))
         bg = st.selectbox("5. 背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "カフェテラス", "ビーチ"])
         st.divider()
-        run_button = st.button("✨ 4枚一括デザイン開始")
+        run_button = st.button("✨ スタイルを融合して生成")
 
     if run_button and source_img:
         selected_poses = random.sample(POSE_LIBRARY[vibe_choice], 4)
@@ -86,25 +60,27 @@ if check_password():
 
         for i, pose_text in enumerate(selected_poses):
             with placeholders[i]:
-                with st.spinner(f"生成中... {i+1}/4"):
+                with st.spinner(f"融合デザイン中... {i+1}/4"):
                     try:
-                        # 参照画像＋テキスト指示のハイブリッドロジック
+                        # 融合ロジックを極限まで強化
                         if ref_img:
+                            # 参照画像からは「デザイン要素」だけを抽出し、ベーススタイル（水着など）に適用させる指示
                             cloth_task = (
-                                f"Based on the outfit in IMAGE 2, apply these specific modifications: {cloth_detail}. "
-                                f"Maintain the basic silhouette of IMAGE 2 but prioritize the color and design changes mentioned in '{cloth_detail}'."
+                                f"Create a HYBRID OUTFIT. The SHAPE must be a {cloth_main}. "
+                                f"STRICTLY APPLY the visual elements (color palette, patterns, ribbons, lace, and aesthetic) from IMAGE 2 onto this {cloth_main}. "
+                                f"Do NOT copy the clothing shape from IMAGE 2; only use its style DNA. {cloth_detail}."
                             )
                         else:
                             cloth_task = f"A high-quality {cloth_main}. {cloth_detail}."
 
                         prompt = (
-                            f"TASK: Keeping face and identity of IMAGE 1, generate a professional photo. "
+                            f"TASK: Keeping the face and body of IMAGE 1, generate a professional studio photo. "
                             f"COMPOSITION: {pose_text} "
                             f"OUTFIT: {cloth_task} "
-                            f"BACKGROUND: {bg} with intense professional bokeh. "
-                            f"RULES: LIPS SEALED, NO TEETH VISIBLE. Sharp razor focus on the person. " # 黄金ルール
+                            f"BACKGROUND: {bg} with intense bokeh. "
+                            f"RULES: LIPS SEALED, NO TEETH VISIBLE. Razor-sharp focus on the person. " # 黄金ルール
                             f"IDENTITY: Strictly preserve the facial features of the woman in IMAGE 1."
-                            f"QUALITY: 8k, photorealistic studio photography, masterpiece."
+                            f"QUALITY: 8k, photorealistic masterpiece."
                         )
 
                         response = client.models.generate_content(
@@ -113,7 +89,7 @@ if check_password():
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
                                 safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
-                                image_config=types.ImageConfig(aspect_ratio="2:3") # 黄金比
+                                image_config=types.ImageConfig(aspect_ratio="2:3")
                             )
                         )
 
@@ -124,8 +100,7 @@ if check_password():
                             
                             buf = io.BytesIO()
                             img.save(buf, format="JPEG")
-                            btn_name = f"pose_{i+1}.jpg"
-                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=btn_name, mime="image/jpeg")
+                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"p_{i+1}.jpg", mime="image/jpeg")
                         else:
                             st.error("生成失敗")
                     except Exception as e:
@@ -133,4 +108,4 @@ if check_password():
                     time.sleep(1)
 
 st.markdown("---")
-st.caption("© 2026 Karinto Group - Hybrid Design Engine")
+st.caption("© 2026 Karinto Group - Style Fusion Engine")
