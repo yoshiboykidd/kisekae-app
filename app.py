@@ -47,4 +47,73 @@ if check_password():
         st.divider()
         run_button = st.button("✨ 4枚一括生成開始")
 
-    if run_button and
+    if run_button and source_img:
+        st.subheader("🖼️ 生成結果")
+        cols_row1 = st.columns(2)
+        cols_row2 = st.columns(2)
+        placeholders = [cols_row1[0], cols_row1[1], cols_row2[0], cols_row2[1]]
+
+        base_parts = [types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')]
+        if ref_img:
+            base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
+
+        # 各スロットごとに独立して生成
+        for i, (slot_name, pose_instruction) in enumerate(POSE_SLOTS.items()):
+            # 2x2のグリッドに配置
+            target_col = placeholders[i]
+            
+            with target_col:
+                with st.spinner(f"生成中... {i+1}/4"):
+                    try:
+                        # 衣装と体型の切り離し指示
+                        if ref_img:
+                            # 画像2を「人間」ではなく「布のデザインサンプル」として定義
+                            cloth_task = (
+                                f"OUTFIT DNA: Replicate ONLY the color, textile pattern, and material from IMAGE 2. "
+                                f"Apply this DNA onto a {cloth_main}. {cloth_detail}. "
+                                f"CRITICAL: Do NOT copy the body shape, height, or physique from IMAGE 2."
+                            )
+                        else:
+                            cloth_task = f"OUTFIT: A high-quality {cloth_main}. {cloth_detail}."
+
+                        # プロンプトの構築（アイデンティティと骨格の保護を最優先）
+                        prompt = (
+                            f"STRICT INSTRUCTION 1 (IDENTITY & PHYSIQUE): You MUST generate the EXACT person from IMAGE 1. "
+                            f"Her face, jawline, and biological body structure MUST be 100% identical to IMAGE 1. "
+                            f"Ignore any human features in IMAGE 2; IMAGE 2 is only a fabric sample. "
+                            f"STRICT INSTRUCTION 2 (OUTFIT): {cloth_task} "
+                            f"STRICT INSTRUCTION 3 (POSE): {pose_instruction} "
+                            f"STRICT INSTRUCTION 4 (NO TEETH): Lips MUST be sealed. Do NOT show teeth. "
+                            f"ENVIRONMENT: {bg}. Professional 8k photography, sharp focus."
+                        )
+
+                        response = client.models.generate_content(
+                            model='gemini-3-pro-image-preview',
+                            contents=base_parts + [prompt],
+                            config=types.GenerateContentConfig(
+                                response_modalities=['IMAGE'],
+                                safety_settings=[
+                                    types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
+                                    types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
+                                ],
+                                image_config=types.ImageConfig(aspect_ratio="2:3")
+                            )
+                        )
+
+                        if response.candidates and response.candidates[0].content.parts:
+                            img_data = response.candidates[0].content.parts[0].inline_data.data
+                            img = Image.open(io.BytesIO(img_data)).resize((600, 900))
+                            st.image(img, caption=slot_name, use_container_width=True)
+                            
+                            buf = io.BytesIO()
+                            img.save(buf, format="JPEG")
+                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"pose_{i+1}.jpg", mime="image/jpeg", key=f"btn_{i}")
+                        else:
+                            st.error("AI規制によりブロックされました。")
+                    except Exception as e:
+                        st.error(f"エラー発生: {e}")
+                    
+                    time.sleep(1.0) # 連続リクエストによるエラー防止
+
+st.markdown("---")
+st.caption("© 2026 Karinto Group - Identity Lock Engine V5")
