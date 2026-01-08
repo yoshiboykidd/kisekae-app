@@ -1,11 +1,43 @@
 import streamlit as st
 from google import genai
 from google.genai import types
-from PIL import Image
+from PIL import Image, ImageFilter
 import io
+import os
 import time
+import cv2
+import numpy as np
 
-# --- 1. 認証機能 (karin10) ---
+# --- 1. 顔ブラー処理関数 (OpenCVで顔を検出し、Pillowでボカす) ---
+def apply_face_blur(pil_image, blur_radius=25):
+    # PIL画像をOpenCV形式(numpy配列)に変換
+    cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+    
+    # 顔検出用の学習済みモデル(Haar Cascade)を読み込み
+    # Streamlit Cloud環境でも動作するよう標準パスを使用
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+    
+    # 顔を検出 (パラメータを調整して精度を確保)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    
+    # 検出された顔領域にブラーをかける
+    pil_draw_image = pil_image.copy()
+    for (x, y, w, h) in faces:
+        # 少し広めに範囲をとる (顔全体を隠すため)
+        margin = int(w * 0.1)
+        x1, y1 = max(0, x - margin), max(0, y - margin)
+        x2, y2 = min(pil_image.width, x + w + margin), min(pil_image.height, y + h + margin)
+        
+        # 顔の領域を切り出してブラーを適用
+        face_region = pil_draw_image.crop((x1, y1, x2, y2))
+        blurred_region = face_region.filter(ImageFilter.GaussianBlur(blur_radius))
+        # 元の画像に貼り戻す
+        pil_draw_image.paste(blurred_region, (x1, y1))
+        
+    return pil_draw_image
+
+# --- 2. 認証機能 (karin10) ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -21,14 +53,14 @@ def check_password():
         return False
     return True
 
-# --- 2. メインアプリ ---
+# --- 3. メインアプリ ---
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 
-    st.title("📸 AI KISEKAE [Identity & Physique Lock]")
+    st.title("📸 AI KISEKAE [Identity Lock & Auto Blur]")
 
-    # 4つの構図の定義
+    # 4つの構図スロット
     POSE_SLOTS = {
         "A: 正面（全身）": "A formal full-body fashion shot, standing straight, facing forward.",
         "B: 動き（全身）": "A dynamic full-body shot, walking or turning pose.",
@@ -38,14 +70,18 @@ if check_password():
 
     with st.sidebar:
         st.subheader("⚙️ 生成設定")
-        source_img = st.file_uploader("1. キャスト写真 (顔・体型：絶対遵守)", type=['png', 'jpg', 'jpeg'])
-        ref_img = st.file_uploader("2. 衣装参照画像 (布地の柄・色のみ引用)", type=['png', 'jpg', 'jpeg'])
+        source_img = st.file_uploader("1. キャスト写真 (顔・体型ソース)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("2. 衣装参考画像 (ニュアンス用)", type=['png', 'jpg', 'jpeg'])
         st.divider()
-        cloth_main = st.selectbox("3. スタイル設定", ["ワンピースドレス", "タイトミニドレス", "オフィスカジュアル", "ナーススタイル", "メイドスタイル", "スイムウェア", "浴衣"])
-        cloth_detail = st.text_input("衣装の追加指示", placeholder="例：黒のサテン地、フリル付き")
-        bg = st.selectbox("4. 背景", ["高級ホテル", "夜の街並み", "撮影スタジオ", "カフェテラス", "プライベートビーチ"])
+        cloth_main = st.selectbox("3. スタイル設定", ["ワンピースドレス", "タイトミニドレス", "清楚ワンピース", "スイムウェア", "浴衣"])
+        cloth_detail = st.text_input("衣装の追加指示", placeholder="例：黒サテン地、ピンクのリボン")
+        bg = st.selectbox("4. 背景", ["高級ホテル", "夜の街並み", "撮影スタジオ", "プライベートビーチ"])
         st.divider()
-        run_button = st.button("✨ 4枚一括生成開始")
+        # ★ブラーのON/OFFと強さを選べるように設定
+        enable_blur = st.checkbox("🛡️ 最終画像に顔ブラーをかける", value=True)
+        blur_strength = st.slider("ブラーの強さ", 10, 50, 25)
+        st.divider()
+        run_button = st.button("✨ 掟を守って4枚生成開始")
 
     if run_button and source_img:
         st.subheader("🖼️ 生成結果")
@@ -57,33 +93,27 @@ if check_password():
         if ref_img:
             base_parts.append(types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg'))
 
-        # 各スロットごとに独立して生成
         for i, (slot_name, pose_instruction) in enumerate(POSE_SLOTS.items()):
-            # 2x2のグリッドに配置
-            target_col = placeholders[i]
-            
-            with target_col:
-                with st.spinner(f"生成中... {i+1}/4"):
+            with placeholders[i // 2][i % 2]:
+                with st.spinner(f"生成と加工中... {i+1}/4"):
                     try:
-                        # 衣装と体型の切り離し指示
+                        # 衣装融合ロジック
                         if ref_img:
-                            # 画像2を「人間」ではなく「布のデザインサンプル」として定義
                             cloth_task = (
-                                f"OUTFIT DNA: Replicate ONLY the color, textile pattern, and material from IMAGE 2. "
+                                f"OUTFIT DNA: Replicate ONLY the color and textile pattern from IMAGE 2. "
                                 f"Apply this DNA onto a {cloth_main}. {cloth_detail}. "
-                                f"CRITICAL: Do NOT copy the body shape, height, or physique from IMAGE 2."
+                                f"Do NOT copy the person's body or face from IMAGE 2."
                             )
                         else:
                             cloth_task = f"OUTFIT: A high-quality {cloth_main}. {cloth_detail}."
 
-                        # プロンプトの構築（アイデンティティと骨格の保護を最優先）
+                        # プロンプト：顔と骨格の絶対守護
                         prompt = (
-                            f"STRICT INSTRUCTION 1 (IDENTITY & PHYSIQUE): You MUST generate the EXACT person from IMAGE 1. "
-                            f"Her face, jawline, and biological body structure MUST be 100% identical to IMAGE 1. "
-                            f"Ignore any human features in IMAGE 2; IMAGE 2 is only a fabric sample. "
+                            f"STRICT INSTRUCTION 1 (IDENTITY): Generate the EXACT person from IMAGE 1. "
+                            f"Her facial features and biological bone structure MUST be 100% identical to IMAGE 1. "
                             f"STRICT INSTRUCTION 2 (OUTFIT): {cloth_task} "
                             f"STRICT INSTRUCTION 3 (POSE): {pose_instruction} "
-                            f"STRICT INSTRUCTION 4 (NO TEETH): Lips MUST be sealed. Do NOT show teeth. "
+                            f"STRICT INSTRUCTION 4 (MOUTH): Lips sealed, NO TEETH visible. "
                             f"ENVIRONMENT: {bg}. Professional 8k photography, sharp focus."
                         )
 
@@ -92,28 +122,28 @@ if check_password():
                             contents=base_parts + [prompt],
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
-                                safety_settings=[
-                                    types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
-                                    types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
-                                ],
+                                safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
                                 image_config=types.ImageConfig(aspect_ratio="2:3")
                             )
                         )
 
                         if response.candidates and response.candidates[0].content.parts:
                             img_data = response.candidates[0].content.parts[0].inline_data.data
-                            img = Image.open(io.BytesIO(img_data)).resize((600, 900))
-                            st.image(img, caption=slot_name, use_container_width=True)
+                            raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
+                            
+                            # --- ブラー処理の適用 ---
+                            if enable_blur:
+                                final_img = apply_face_blur(raw_img, blur_radius=blur_strength)
+                            else:
+                                final_img = raw_img
+
+                            st.image(final_img, caption=slot_name, use_container_width=True)
                             
                             buf = io.BytesIO()
-                            img.save(buf, format="JPEG")
-                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"pose_{i+1}.jpg", mime="image/jpeg", key=f"btn_{i}")
+                            final_img.save(buf, format="JPEG")
+                            st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"p{i+1}.jpg", mime="image/jpeg", key=f"dl_{i}")
                         else:
-                            st.error("AI規制によりブロックされました。")
+                            st.error("ブロックされました。")
                     except Exception as e:
-                        st.error(f"エラー発生: {e}")
-                    
-                    time.sleep(1.0) # 連続リクエストによるエラー防止
-
-st.markdown("---")
-st.caption("© 2026 Karinto Group - Identity Lock Engine V5")
+                        st.error(f"エラー: {e}")
+                    time.sleep(1.2)
