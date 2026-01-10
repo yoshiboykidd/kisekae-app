@@ -9,7 +9,7 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. ポーズ選出ロジック (pose_XXX_Angle 形式対応版) ---
+# --- 1. ポーズ選出ロジック ---
 def get_4_preset_poses(pattern="立ち3:座り1"):
     base_path = "presets/poses"
     stand_dir = os.path.join(base_path, "standing")
@@ -19,7 +19,6 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
         if not os.path.exists(directory):
             return []
         files = os.listdir(directory)
-        # ファイル名が "pose_001_Front.jpg" の場合、 "pose_001" までをIDとする
         ids = []
         for f in files:
             parts = f.split('_')
@@ -28,11 +27,10 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
         return sorted(list(set(ids)))
 
     def find_file(directory, set_id, angle_keywords):
-        """指定したセットIDとアングルキーワードに合致するファイルを探す"""
+        if not os.path.exists(directory): return None
         files = os.listdir(directory)
         for f in files:
             if f.startswith(set_id):
-                # Front, Quarter, Low, High (タイポ Frot にも対応)
                 for kw in angle_keywords:
                     if kw.lower() in f.lower():
                         return os.path.join(directory, f)
@@ -41,7 +39,6 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
     stand_sets = get_set_ids(stand_dir)
     sit_sets = get_set_ids(sit_dir)
 
-    # セット数チェック
     if pattern == "立ち3:座り1" and (len(stand_sets) < 3 or len(sit_sets) < 1):
         st.error(f"セット不足: 立ち{len(stand_sets)}, 座り{len(sit_sets)}")
         return []
@@ -51,7 +48,6 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
         if pattern == "立ち3:座り1":
             chosen_s = random.sample(stand_sets, 3)
             chosen_t = random.sample(sit_sets, 1)
-            # Front (Frot対応), Quarter, Low, High の順で取得
             selected_paths.append(find_file(stand_dir, chosen_s[0], ["Front", "Frot"]))
             selected_paths.append(find_file(stand_dir, chosen_s[1], ["Quarter"]))
             selected_paths.append(find_file(stand_dir, chosen_s[2], ["Low"]))
@@ -64,7 +60,7 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
             selected_paths.append(find_file(sit_dir, chosen_t[0], ["Quarter"]))
             selected_paths.append(find_file(sit_dir, chosen_t[1], ["High"]))
     except Exception as e:
-        st.error(f"パス生成エラー: {e}")
+        st.error(f"ポーズ選出エラー: {e}")
         return []
 
     return [p for p in selected_paths if p is not None]
@@ -125,10 +121,14 @@ if check_password():
 
     if run_button and source_img:
         pose_paths = get_4_preset_poses(pose_pattern)
+        
         if pose_paths:
-            st.subheader(f"🖼️ 生成結果")
-            cols = [st.columns(2), st.columns(2)]
-            placeholders = [cols[0][0], cols[0][1], cols[1][0], cols[1][1]]
+            st.subheader("🖼️ 生成結果")
+            
+            # --- ここを修正：4つの枠をフラットに管理 ---
+            row1 = st.columns(2)
+            row2 = st.columns(2)
+            placeholders = [row1[0], row1[1], row2[0], row2[1]]
 
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
             style_part = None
@@ -136,9 +136,11 @@ if check_password():
                 style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
 
             for i, path in enumerate(pose_paths):
-                # 表示用の名前取得
+                # 表示用ラベル（Front, Frot, Quarter, Low, High）
                 angle_label = path.split('_')[-1].split('.')[0]
-                with placeholders[i // 2][i % 2]:
+                
+                # placeholders[i] で順番にアクセス
+                with placeholders[i]:
                     with st.spinner(f"{angle_label}生成中..."):
                         try:
                             with open(path, "rb") as f:
@@ -152,7 +154,7 @@ if check_password():
                                 f"IDENTITY (IMAGE 1): Absolute match. Copy face and bone structure 100%.\n"
                                 f"POSE (IMAGE 3): Follow this exact skeletal pose and camera angle.\n"
                                 f"OUTFIT: A {cloth_main}. {cloth_detail}.\n"
-                                f"RESTRICTION: Japanese woman. Lips sealed, no teeth. 8k photorealistic. Background: {bg}."
+                                f"RULES: Japanese woman. Lips sealed, no teeth. 8k photorealistic. Background: {bg}."
                             )
 
                             response = client.models.generate_content(
@@ -173,7 +175,9 @@ if check_password():
                                 
                                 buf = io.BytesIO()
                                 final_img.save(buf, format="JPEG")
-                                st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
+                                st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"k_{i+1}.jpg", key=f"dl_{i}")
+                            else:
+                                st.error("AI判定でスキップされました")
                         except Exception as e:
                             st.error(f"エラー: {e}")
                         time.sleep(1.2)
