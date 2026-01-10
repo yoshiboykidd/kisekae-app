@@ -90,7 +90,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.7")
+        st.title("🔐 Karinto Group Image Tool ver 2.8")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -103,7 +103,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.7")
+    st.title("📸 AI KISEKAE Manager ver 2.8")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -145,16 +145,14 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # --- プロンプト掟強化 (ver 2.7: 身体所有権の明確化) ---
+                            # --- プロンプト掟強化 (ver 2.8: 完全単体出力命令) ---
                             prompt = (
-                                f"STRICT MANDATE: YOU ARE GENERATING ONE REAL JAPANESE WOMAN.\n"
-                                f"1. THE MASTER BODY (IMAGE 1): The subject in the output MUST possess the EXACT same physical build, weight, curves, and bone structure as the woman in IMAGE 1. "
-                                f"She is NOT a model. She is the real person from IMAGE 1. Do not use the doll-like proportions of IMAGE 3.\n"
-                                f"2. WARDROBE CLONE (IMAGE 2): Across all 4 photos, she must wear the same {cloth_main} with '{cloth_detail}' seen in IMAGE 2. "
-                                f"Treat this as a single continuous session. Do not change the dress design.\n"
-                                f"3. INVISIBLE SKELETON (IMAGE 3): Use IMAGE 3 ONLY as an invisible joint-coordinate guide for the '{angle_label}' pose. "
-                                f"IMAGE 3 has NO skin or flesh. IMAGE 1 provides all the flesh and body shape.\n"
-                                f"4. OUTPUT: 8k photorealistic, professional studio lighting, {bg}, lips sealed, no teeth."
+                                f"CRITICAL OUTPUT FORMAT: GENERATE EXACTLY ONE SINGLE VERTICAL PHOTOGRAPH. DO NOT CREATE A GRID, COLLAGE, OR SPLIT SCREEN. ONLY ONE PERSON IN THE FRAME.\n"
+                                f"TASK: Create a single portrait of the real Japanese woman from IMAGE 1.\n"
+                                f"1. BODY SOURCE (IMAGE 1): The subject must have the EXACT physical build and curves of the woman in IMAGE 1. IMAGE 3 is only an invisible wireframe for the pose, not body shape.\n"
+                                f"2. ATTIRE (IMAGE 2): She is wearing the identical {cloth_main} with '{cloth_detail}' as seen in IMAGE 2.\n"
+                                f"3. POSE (IMAGE 3): Adopting the specific '{angle_label}' pose defined by the joints in IMAGE 3.\n"
+                                f"4. QUALITY: 8k photorealistic professional photograph, {bg}, lips sealed."
                             )
 
                             response = client.models.generate_content(
@@ -175,4 +173,4 @@ if check_password():
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
                         except Exception as e: st.error(f"エラー: {e}")
-                        time.sleep(1.8) # 慎重に生成
+                        time.sleep(2.0) # 安全のためウェイトを少し延長
