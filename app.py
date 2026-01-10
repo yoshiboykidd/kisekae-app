@@ -90,7 +90,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.6")
+        st.title("🔐 Karinto Group Image Tool ver 2.7")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -103,7 +103,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.6")
+    st.title("📸 AI KISEKAE Manager ver 2.7")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -114,7 +114,7 @@ if check_password():
             
         st.divider()
         cloth_main = st.selectbox("ベース衣装", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服"])
-        cloth_detail = st.text_input("衣装詳細指示", placeholder="例：黒サテン、タイトな裾")
+        cloth_detail = st.text_input("衣装詳細指示", placeholder="例：黒サテン、フリル付き")
         bg = st.selectbox("背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "ビーチ"])
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=True)
@@ -145,15 +145,16 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # --- プロンプト掟強化 (ver 2.6: 体型維持の極大化) ---
+                            # --- プロンプト掟強化 (ver 2.7: 身体所有権の明確化) ---
                             prompt = (
-                                f"STRICT MANDATE: Copy the woman's physical form from IMAGE 1 precisely. SINGLE PERSON.\n"
-                                f"1. BODY ANCHOR (IMAGE 1): Use 100% of the woman's actual physique, body fat percentage, and muscle tone from IMAGE 1. "
-                                f"Duplicate her specific shoulder width, waistline, and leg thickness. IGNORE the mannequin's thin body in IMAGE 3.\n"
-                                f"2. FACE LOCK (IMAGE 1): Absolute 100% facial replication. No variations.\n"
-                                f"3. UNIFORM OUTFIT (IMAGE 2): Must wear the EXACT SAME {cloth_main} from IMAGE 2. Fabric and '{cloth_detail}' must be identical.\n"
-                                f"4. SKELETON GUIDE (IMAGE 3): Use IMAGE 3 only for the joint angles of the '{angle_label}' pose. Do not take any body mass from it.\n"
-                                f"5. STYLE: Japanese woman, realistic skin texture, 8k, {bg}, lips sealed."
+                                f"STRICT MANDATE: YOU ARE GENERATING ONE REAL JAPANESE WOMAN.\n"
+                                f"1. THE MASTER BODY (IMAGE 1): The subject in the output MUST possess the EXACT same physical build, weight, curves, and bone structure as the woman in IMAGE 1. "
+                                f"She is NOT a model. She is the real person from IMAGE 1. Do not use the doll-like proportions of IMAGE 3.\n"
+                                f"2. WARDROBE CLONE (IMAGE 2): Across all 4 photos, she must wear the same {cloth_main} with '{cloth_detail}' seen in IMAGE 2. "
+                                f"Treat this as a single continuous session. Do not change the dress design.\n"
+                                f"3. INVISIBLE SKELETON (IMAGE 3): Use IMAGE 3 ONLY as an invisible joint-coordinate guide for the '{angle_label}' pose. "
+                                f"IMAGE 3 has NO skin or flesh. IMAGE 1 provides all the flesh and body shape.\n"
+                                f"4. OUTPUT: 8k photorealistic, professional studio lighting, {bg}, lips sealed, no teeth."
                             )
 
                             response = client.models.generate_content(
@@ -174,4 +175,4 @@ if check_password():
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
                         except Exception as e: st.error(f"エラー: {e}")
-                        time.sleep(1.5)
+                        time.sleep(1.8) # 慎重に生成
