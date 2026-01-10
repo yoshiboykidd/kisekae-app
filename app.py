@@ -22,7 +22,6 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
         for f in files:
             parts = f.split('_')
             if len(parts) >= 2:
-                # pose_001_Front.jpg -> pose_001 をIDとする
                 ids.append(f"{parts[0]}_{parts[1]}")
         return sorted(list(set(ids)))
 
@@ -67,7 +66,6 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
 
 # --- 2. 顔ブラー処理 (楕円形＆強度選択対応) ---
 def apply_face_blur(pil_image, blur_radius):
-    # OpenCVで顔検出
     cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
     face_cascade = cv2.CascadeClassifier(cascade_path)
@@ -77,33 +75,23 @@ def apply_face_blur(pil_image, blur_radius):
     if len(faces) == 0:
         return pil_image
 
-    # 1. 画像全体に指定強度のブラーをかけた画像を作成
     blurred_image = pil_image.filter(ImageFilter.GaussianBlur(blur_radius))
-
-    # 2. 楕円形のマスク画像を作成（黒背景に白い楕円）
-    mask = Image.new('L', pil_image.size, 0) # 'L'はグレイスケールモード
+    mask = Image.new('L', pil_image.size, 0)
     draw = ImageDraw.Draw(mask)
     
     for (x, y, w, h) in faces:
-        # 楕円の範囲を少し広げる（上下左右に15%ずつ）
         margin_w = int(w * 0.15)
         margin_h = int(h * 0.15)
         ellipse_box = [
-            x - margin_w,         # 左
-            y - margin_h * 1.2,   # 上（少し多めに）
-            x + w + margin_w,     # 右
-            y + h + margin_h      # 下
+            x - margin_w,
+            y - margin_h * 1.2,
+            x + w + margin_w,
+            y + h + margin_h
         ]
-        # 白い楕円を描画
         draw.ellipse(ellipse_box, fill=255, outline=255)
 
-    # マスクの境界を少しぼかして自然にする
     mask_blurred = mask.filter(ImageFilter.GaussianBlur(radius=blur_radius/2))
-
-    # 3. 元画像とブラー画像をマスクを使って合成
-    # マスクが白い部分（楕円）はブラー画像、黒い部分は元画像が使われる
     final_image = Image.composite(blurred_image, pil_image, mask_blurred)
-    
     return final_image
 
 # --- 3. 認証機能 ---
@@ -111,7 +99,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool")
+        st.title("🔐 Karinto Group Image Tool ver 2.2")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -125,7 +113,8 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager")
+    
+    st.title("📸 AI KISEKAE Manager ver 2.2")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -137,7 +126,7 @@ if check_password():
             
         st.divider()
         cloth_main = st.selectbox("ベース衣装", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服"])
-        cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン")
+        cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン、赤リボン")
         bg = st.selectbox("背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "ビーチ"])
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         
@@ -145,8 +134,7 @@ if check_password():
         st.subheader("🛡️ プライバシー保護")
         enable_blur = st.checkbox("自動顔ブラーを適用", value=True)
         
-        # --- 追加：ブラー強度選択スライダー ---
-        blur_strength = "中" # デフォルト
+        blur_strength = "中"
         if enable_blur:
             blur_strength = st.select_slider(
                 "ブラー強度を選択",
@@ -171,9 +159,11 @@ if check_password():
             if ref_img:
                 style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
 
-            # ブラー強度の数値変換マップ
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
             current_blur_radius = blur_radius_map[blur_strength]
+
+            # 同一セッション感を出すための共通キーワード
+            session_id = random.randint(1000, 9999)
 
             for i, path in enumerate(pose_paths):
                 angle_label = path.split('_')[-1].split('.')[0]
@@ -187,11 +177,15 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
+                            # プロンプト：衣装の固定とポーズの柔軟性を指示
                             prompt = (
-                                f"IDENTITY (IMAGE 1): Absolute match. Copy face and bone structure 100%.\n"
-                                f"POSE (IMAGE 3): Follow this exact skeletal pose and camera angle.\n"
-                                f"OUTFIT: A {cloth_main}. {cloth_detail}.\n"
-                                f"RULES: Japanese woman. Lips sealed, no teeth. 8k photorealistic. Background: {bg}."
+                                f"TASK: Consistent catalog photo session (Session ID: {session_id}).\n"
+                                f"IDENTITY (IMAGE 1): Absolute match. Copy face and body features 100%.\n"
+                                f"OUTFIT CONSISTENCY: Must wear the IDENTICAL {cloth_main} as shown in IMAGE 2 across all photos. "
+                                f"Keep colors, fabrics, and details ({cloth_detail}) exactly the same to look like the same session.\n"
+                                f"POSE & ANGLE (IMAGE 3): Use the 3D mannequin as a REFERENCE for the pose and '{angle_label}' angle. "
+                                f"Make the posture natural and attractive for a Japanese woman, not stiff.\n"
+                                f"QUALITY: 8k photorealistic. Japanese woman. Lips sealed. Background: {bg}."
                             )
 
                             response = client.models.generate_content(
@@ -208,7 +202,6 @@ if check_password():
                                 img_data = response.candidates[0].content.parts[0].inline_data.data
                                 raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
                                 
-                                # 楕円形＆指定強度のブラーを適用
                                 if enable_blur:
                                     final_img = apply_face_blur(raw_img, current_blur_radius)
                                 else:
