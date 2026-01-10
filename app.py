@@ -64,21 +64,17 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
 
     return [p for p in selected_paths if p is not None]
 
-# --- 2. 顔ブラー処理 (検出感度強化) ---
+# --- 2. 顔ブラー処理 ---
 def apply_face_blur(pil_image, blur_radius):
     cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
     face_cascade = cv2.CascadeClassifier(cascade_path)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-    
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
-    
     if len(faces) == 0:
         side_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
         faces = side_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3)
-    
     if len(faces) == 0: return pil_image
-
     blurred_image = pil_image.filter(ImageFilter.GaussianBlur(blur_radius))
     mask = Image.new('L', pil_image.size, 0)
     draw = ImageDraw.Draw(mask)
@@ -94,7 +90,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.5")
+        st.title("🔐 Karinto Group Image Tool ver 2.6")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -107,7 +103,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.5")
+    st.title("📸 AI KISEKAE Manager ver 2.6")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -149,14 +145,15 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # --- プロンプト掟強化 (ver 2.5: 分割禁止) ---
+                            # --- プロンプト掟強化 (ver 2.6: 体型維持の極大化) ---
                             prompt = (
-                                f"STRICT MANDATE: GENERATE ONE SINGLE PERSON ONLY. NO SPLIT SCREEN. NO COLLAGE. NO GRID.\n"
-                                f"1. PHYSIQUE (IMAGE 1): Use the exact body shape, curves, and height from IMAGE 1. Ignore IMAGE 3's proportions.\n"
-                                f"2. FACE (IMAGE 1): 100% facial replication of the woman in IMAGE 1.\n"
-                                f"3. WARDROBE (IMAGE 2): Must wear the IDENTICAL {cloth_main} shown in IMAGE 2 with '{cloth_detail}'. Consistency is absolute.\n"
-                                f"4. POSE (IMAGE 3): Use IMAGE 3 as a skeleton guide for the '{angle_label}' view. One person, one posture in a single frame.\n"
-                                f"5. QUALITY: Photorealistic 8k, {bg}, Japanese woman, lips sealed."
+                                f"STRICT MANDATE: Copy the woman's physical form from IMAGE 1 precisely. SINGLE PERSON.\n"
+                                f"1. BODY ANCHOR (IMAGE 1): Use 100% of the woman's actual physique, body fat percentage, and muscle tone from IMAGE 1. "
+                                f"Duplicate her specific shoulder width, waistline, and leg thickness. IGNORE the mannequin's thin body in IMAGE 3.\n"
+                                f"2. FACE LOCK (IMAGE 1): Absolute 100% facial replication. No variations.\n"
+                                f"3. UNIFORM OUTFIT (IMAGE 2): Must wear the EXACT SAME {cloth_main} from IMAGE 2. Fabric and '{cloth_detail}' must be identical.\n"
+                                f"4. SKELETON GUIDE (IMAGE 3): Use IMAGE 3 only for the joint angles of the '{angle_label}' pose. Do not take any body mass from it.\n"
+                                f"5. STYLE: Japanese woman, realistic skin texture, 8k, {bg}, lips sealed."
                             )
 
                             response = client.models.generate_content(
@@ -172,15 +169,9 @@ if check_password():
                             if response.candidates and response.candidates[0].content.parts:
                                 img_data = response.candidates[0].content.parts[0].inline_data.data
                                 raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
-                                
-                                if enable_blur:
-                                    final_img = apply_face_blur(raw_img, current_blur_radius)
-                                else:
-                                    final_img = raw_img
-                                    
+                                final_img = apply_face_blur(raw_img, current_blur_radius) if enable_blur else raw_img
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
-                            else: st.error("AI判定により画像が生成されませんでした。")
-                        except Exception as e: st.error(f"システムエラー: {e}")
+                        except Exception as e: st.error(f"エラー: {e}")
                         time.sleep(1.5)
