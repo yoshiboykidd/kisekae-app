@@ -1,7 +1,7 @@
 import streamlit as st
 from google import genai
 from google.genai import types
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageDraw
 import io
 import os
 import time
@@ -16,13 +16,13 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
     sit_dir = os.path.join(base_path, "sitting")
 
     def get_set_ids(directory):
-        if not os.path.exists(directory):
-            return []
+        if not os.path.exists(directory): return []
         files = os.listdir(directory)
         ids = []
         for f in files:
             parts = f.split('_')
             if len(parts) >= 2:
+                # pose_001_Front.jpg -> pose_001 をIDとする
                 ids.append(f"{parts[0]}_{parts[1]}")
         return sorted(list(set(ids)))
 
@@ -65,22 +65,46 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
 
     return [p for p in selected_paths if p is not None]
 
-# --- 2. 顔ブラー処理 ---
-def apply_face_blur(pil_image, blur_radius=25):
+# --- 2. 顔ブラー処理 (楕円形＆強度選択対応) ---
+def apply_face_blur(pil_image, blur_radius):
+    # OpenCVで顔検出
     cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
     face_cascade = cv2.CascadeClassifier(cascade_path)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.1, 5)
-    pil_draw_image = pil_image.copy()
+    
+    if len(faces) == 0:
+        return pil_image
+
+    # 1. 画像全体に指定強度のブラーをかけた画像を作成
+    blurred_image = pil_image.filter(ImageFilter.GaussianBlur(blur_radius))
+
+    # 2. 楕円形のマスク画像を作成（黒背景に白い楕円）
+    mask = Image.new('L', pil_image.size, 0) # 'L'はグレイスケールモード
+    draw = ImageDraw.Draw(mask)
+    
     for (x, y, w, h) in faces:
-        margin = int(w * 0.15)
-        x1, y1 = max(0, x - margin), max(0, y - margin)
-        x2, y2 = min(pil_image.width, x + w + margin), min(pil_image.height, y + h + margin)
-        face_region = pil_draw_image.crop((x1, y1, x2, y2))
-        blurred_region = face_region.filter(ImageFilter.GaussianBlur(blur_radius))
-        pil_draw_image.paste(blurred_region, (x1, y1))
-    return pil_draw_image
+        # 楕円の範囲を少し広げる（上下左右に15%ずつ）
+        margin_w = int(w * 0.15)
+        margin_h = int(h * 0.15)
+        ellipse_box = [
+            x - margin_w,         # 左
+            y - margin_h * 1.2,   # 上（少し多めに）
+            x + w + margin_w,     # 右
+            y + h + margin_h      # 下
+        ]
+        # 白い楕円を描画
+        draw.ellipse(ellipse_box, fill=255, outline=255)
+
+    # マスクの境界を少しぼかして自然にする
+    mask_blurred = mask.filter(ImageFilter.GaussianBlur(radius=blur_radius/2))
+
+    # 3. 元画像とブラー画像をマスクを使って合成
+    # マスクが白い部分（楕円）はブラー画像、黒い部分は元画像が使われる
+    final_image = Image.composite(blurred_image, pil_image, mask_blurred)
+    
+    return final_image
 
 # --- 3. 認証機能 ---
 def check_password():
@@ -116,7 +140,21 @@ if check_password():
         cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン")
         bg = st.selectbox("背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "ビーチ"])
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
-        enable_blur = st.checkbox("🛡️ 自動顔ブラー適用", value=True)
+        
+        st.divider()
+        st.subheader("🛡️ プライバシー保護")
+        enable_blur = st.checkbox("自動顔ブラーを適用", value=True)
+        
+        # --- 追加：ブラー強度選択スライダー ---
+        blur_strength = "中" # デフォルト
+        if enable_blur:
+            blur_strength = st.select_slider(
+                "ブラー強度を選択",
+                options=["弱", "中", "強"],
+                value="中"
+            )
+        
+        st.divider()
         run_button = st.button("✨ 4枚一括生成")
 
     if run_button and source_img:
@@ -124,8 +162,6 @@ if check_password():
         
         if pose_paths:
             st.subheader("🖼️ 生成結果")
-            
-            # --- ここを修正：4つの枠をフラットに管理 ---
             row1 = st.columns(2)
             row2 = st.columns(2)
             placeholders = [row1[0], row1[1], row2[0], row2[1]]
@@ -135,11 +171,12 @@ if check_password():
             if ref_img:
                 style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
 
+            # ブラー強度の数値変換マップ
+            blur_radius_map = {"弱": 15, "中": 30, "強": 60}
+            current_blur_radius = blur_radius_map[blur_strength]
+
             for i, path in enumerate(pose_paths):
-                # 表示用ラベル（Front, Frot, Quarter, Low, High）
                 angle_label = path.split('_')[-1].split('.')[0]
-                
-                # placeholders[i] で順番にアクセス
                 with placeholders[i]:
                     with st.spinner(f"{angle_label}生成中..."):
                         try:
@@ -170,7 +207,13 @@ if check_password():
                             if response.candidates and response.candidates[0].content.parts:
                                 img_data = response.candidates[0].content.parts[0].inline_data.data
                                 raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
-                                final_img = apply_face_blur(raw_img) if enable_blur else raw_img
+                                
+                                # 楕円形＆指定強度のブラーを適用
+                                if enable_blur:
+                                    final_img = apply_face_blur(raw_img, current_blur_radius)
+                                else:
+                                    final_img = raw_img
+                                    
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 
                                 buf = io.BytesIO()
