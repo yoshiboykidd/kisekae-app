@@ -64,13 +64,20 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
 
     return [p for p in selected_paths if p is not None]
 
-# --- 2. 顔ブラー処理 ---
+# --- 2. 顔ブラー処理 (検出感度強化版) ---
 def apply_face_blur(pil_image, blur_radius):
     cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
     face_cascade = cv2.CascadeClassifier(cascade_path)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.1, 5)
+    
+    # 検出感度を強化 (scaleFactorを下げ、minNeighborsを調整)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
+    
+    if len(faces) == 0:
+        # 側面顔用カスケードでも試行 (オプション)
+        side_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
+        faces = side_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3)
     
     if len(faces) == 0: return pil_image
 
@@ -78,8 +85,8 @@ def apply_face_blur(pil_image, blur_radius):
     mask = Image.new('L', pil_image.size, 0)
     draw = ImageDraw.Draw(mask)
     for (x, y, w, h) in faces:
-        margin_w = int(w * 0.15); margin_h = int(h * 0.15)
-        ellipse_box = [x - margin_w, y - margin_h * 1.2, x + w + margin_w, y + h + margin_h]
+        margin_w = int(w * 0.15); margin_h = int(h * 0.2)
+        ellipse_box = [x - margin_w, y - margin_h * 1.3, x + w + margin_w, y + h + margin_h]
         draw.ellipse(ellipse_box, fill=255, outline=255)
     mask_blurred = mask.filter(ImageFilter.GaussianBlur(radius=blur_radius/2))
     return Image.composite(blurred_image, pil_image, mask_blurred)
@@ -89,7 +96,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.3")
+        st.title("🔐 Karinto Group Image Tool ver 2.4")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -102,30 +109,30 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.3")
+    st.title("📸 AI KISEKAE Manager ver 2.4")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
         source_img = st.file_uploader("キャスト写真", type=['png', 'jpg', 'jpeg'])
         if source_img: st.image(source_img, use_container_width=True)
-        ref_img = st.file_uploader("衣装参考 (必須推奨)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("衣装参考", type=['png', 'jpg', 'jpeg'])
         if ref_img: st.image(ref_img, use_container_width=True)
             
         st.divider()
         cloth_main = st.selectbox("ベース衣装", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服"])
-        cloth_detail = st.text_input("追加指示", placeholder="例：黒サテン、赤リボン")
+        cloth_detail = st.text_input("衣装詳細指示", placeholder="例：黒サテン、タイトな裾")
         bg = st.selectbox("背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "ビーチ"])
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
-        enable_blur = st.checkbox("自動顔ブラーを適用", value=True)
+        enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=True)
         blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable_blur else "中"
         
         st.divider()
-        run_button = st.button("✨ 掟を守って4枚生成")
+        run_button = st.button("✨ 掟を遵守して4枚一括生成")
 
     if run_button and source_img:
         pose_paths = get_4_preset_poses(pose_pattern)
         if pose_paths:
-            st.subheader("🖼️ 生成結果")
+            st.subheader("🖼️ 生成結果 (掟遵守モード)")
             rows = [st.columns(2), st.columns(2)]
             placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
@@ -133,10 +140,13 @@ if check_password():
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
             current_blur_radius = blur_radius_map[blur_strength]
 
+            # セッションIDを固定
+            session_key = f"SSN-{random.randint(100, 999)}"
+
             for i, path in enumerate(pose_paths):
                 angle_label = path.split('_')[-1].split('.')[0]
                 with placeholders[i]:
-                    with st.spinner(f"{angle_label}生成中..."):
+                    with st.spinner(f"{angle_label}アングルを厳密生成中..."):
                         try:
                             with open(path, "rb") as f:
                                 pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
@@ -144,15 +154,14 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # --- プロンプト強化 (ver 2.3) ---
+                            # --- プロンプト掟強化 (ver 2.4) ---
                             prompt = (
-                                f"STRICT RULE: This is one single professional photo shoot session.\n"
-                                f"1. PHYSIQUE (IMAGE 1): Use 100% of the woman's actual body shape, height, and weight from IMAGE 1. "
-                                f"DO NOT use the mannequin's proportions from IMAGE 3.\n"
-                                f"2. WARDROBE (IMAGE 2): She must wear the EXACT SAME {cloth_main} shown in IMAGE 2. "
-                                f"Fabric, color, and specific details ({cloth_detail}) must be identical across all photos.\n"
-                                f"3. POSTURE (IMAGE 3): Use IMAGE 3 ONLY as a skeleton guide. Mimic the pose and the '{angle_label}' angle naturally.\n"
-                                f"4. ENVIRONMENT: Japanese woman, 8k photorealistic, {bg}, consistent lighting, lips sealed."
+                                f"STRICT IDENTITY LOCK (Session: {session_key}):\n"
+                                f"1. BODY SHAPE (IMAGE 1): You MUST use the exact height, weight, shoulder width, and curves of the woman in IMAGE 1. "
+                                f"IMAGE 3 is ONLY a wireframe guide for joints. DO NOT adopt the mannequin's thin or plastic physique.\n"
+                                f"2. FACE (IMAGE 1): 100% facial feature replication. No deviations.\n"
+                                f"3. WARDROBE (IMAGE 2): Identical {cloth_main}. Maintain the exact fabric texture, color, and fit from IMAGE 2 and '{cloth_detail}' for all 4 shots.\n"
+                                f"4. CAMERA: Professional '{angle_label}' angle. Photorealistic 8k, {bg}, lips sealed, Japanese woman."
                             )
 
                             response = client.models.generate_content(
@@ -168,10 +177,16 @@ if check_password():
                             if response.candidates and response.candidates[0].content.parts:
                                 img_data = response.candidates[0].content.parts[0].inline_data.data
                                 raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
-                                final_img = apply_face_blur(raw_img, current_blur_radius) if enable_blur else raw_img
+                                
+                                # ブラー処理の確実性を向上
+                                if enable_blur:
+                                    final_img = apply_face_blur(raw_img, current_blur_radius)
+                                else:
+                                    final_img = raw_img
+                                    
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
-                                st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), file_name=f"k_{i+1}.jpg", key=f"dl_{i}")
-                            else: st.error("AI判定によりスキップされました")
-                        except Exception as e: st.error(f"エラー: {e}")
-                        time.sleep(1.2)
+                                st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
+                            else: st.error("AI判定により画像が生成されませんでした。")
+                        except Exception as e: st.error(f"システムエラー: {e}")
+                        time.sleep(1.5) # レートリミット回避のため少し長めに
