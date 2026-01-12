@@ -9,19 +9,7 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. 背景・セッション初期化 ---
-BG_OPTIONS = {
-    "高級スイートルーム (温かい照明)": "Luxury hotel presidential suite with warm soft lighting",
-    "大理石のホテルロビー (豪華なシャンデリア)": "Grand marble lobby of a 5-star hotel with elegant chandeliers",
-    "都会の夜景 (キラキラしたボケ)": "Shimmering city night view of Tokyo with colorful bokeh lights",
-    "陽光が差し込む明るいテラス (自然光)": "Sunny outdoor terrace with soft natural sunlight and greenery bokeh",
-    "白を基調とした明るいリビング": "Bright minimalist luxury living room with white interior and soft morning light",
-    "緑の見える午後の公園 (透明感)": "Beautiful park with lush green trees and soft afternoon sun, deep bokeh",
-    "夜のインフィニティプール": "Luxury infinity pool at night with turquoise water reflections",
-    "伝統的な和室 (行灯の光)": "Traditional Japanese room with tatami and soft paper lantern light"
-}
-
-# セッション管理用変数の初期化
+# --- 1. セッション初期化 ---
 if "generated_images" not in st.session_state:
     st.session_state.generated_images = [None] * 4
 if "current_pose_paths" not in st.session_state:
@@ -30,6 +18,8 @@ if "anchor_part" not in st.session_state:
     st.session_state.anchor_part = None
 if "wardrobe_task" not in st.session_state:
     st.session_state.wardrobe_task = ""
+if "final_bg_prompt" not in st.session_state:
+    st.session_state.final_bg_prompt = ""
 
 # --- 2. ユーティリティ関数 ---
 
@@ -74,7 +64,7 @@ def generate_image(client, path, identity_part, anchor_part, wardrobe_task, bg_p
         f"1. FACE IDENTITY (IMAGE 1): High-fidelity transplant of the face from IMAGE 1. 100% match.\n"
         f"2. ANATOMICAL MASS (IMAGE 1): Use EXACT physical body mass/weight/curves from IMAGE 1. IMAGE 3 is skeleton only.\n"
         f"3. WARDROBE (IMAGE 2): {wardrobe_task}\n"
-        f"4. SCENE: {bg_prompt}, 85mm portrait bokeh, Japanese woman, lips sealed."
+        f"4. SCENE: {bg_prompt}, professional 85mm portrait, shallow depth of field, Japanese woman, lips sealed."
     )
     
     response = client.models.generate_content(
@@ -99,72 +89,73 @@ def generate_image(client, path, identity_part, anchor_part, wardrobe_task, bg_p
 # --- 3. 認証 ---
 if "password_correct" not in st.session_state: st.session_state.password_correct = False
 if not st.session_state.password_correct:
-    st.title("🔐 Login ver 2.24")
+    st.title("🔐 Login ver 2.25")
     if st.text_input("合言葉", type="password") == "karin10" and st.button("ログイン"):
         st.session_state.password_correct = True; st.rerun()
     st.stop()
 
 # --- 4. メインUI ---
-st.title("📸 AI KISEKAE Manager ver 2.24")
+st.title("📸 AI KISEKAE Manager ver 2.25")
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 with st.sidebar:
     cast_name = st.text_input("👤 キャスト名", "cast")
     source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
     ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
+    
+    st.divider()
     cloth_main = st.selectbox("衣装カテゴリ", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
     cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン、フリル付き")
-    selected_bg_label = st.selectbox("背景を選択", list(BG_OPTIONS.keys()))
-    bg_free_text = st.text_input("背景自由入力")
+    
+    st.divider()
+    st.subheader("🌅 背景・ロケーション設定")
+    bg_text = st.text_input("背景の場所を自由入力", "高級ホテルの部屋")
+    time_of_day = st.radio("時間帯を選択", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"], index=0)
+    
+    st.divider()
     pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
     enable_blur = st.checkbox("🛡️ 楕円顔ブラーを適用")
     
-    st.divider()
     run_btn = st.button("✨ 4枚一括生成 (新規)")
 
-# --- 5. 生成ロジックの実装 ---
+# --- 5. 生成ロジック ---
 if run_btn and source_img:
-    # 1. 衣装アンカーの確定
+    # 1. 背景プロンプトの組み立て
+    time_mods = {
+        "昼 (Daylight)": "bright natural daylight, high-key lighting, soft sunbeams",
+        "夕方 (Golden Hour)": "warm sunset lighting, golden hour glow, long shadows, cinematic atmosphere",
+        "夜 (Night)": "nighttime atmosphere, artificial city lights, dim ambient lighting, dramatic contrast"
+    }
+    st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, beautifully blurred bokeh background"
+
+    # 2. 衣装アンカー確定
     if ref_img:
         st.session_state.anchor_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
-        st.session_state.wardrobe_task = f"Strictly replicate the outfit in IMAGE 2. Specs: {cloth_detail}."
+        st.session_state.wardrobe_task = f"Strictly replicate IMAGE 2. Specs: {cloth_detail}."
     else:
         with st.spinner("衣装デザインを固定中..."):
             res = client.models.generate_content(model='gemini-3-pro-image-preview', contents=[f"A catalog photo of {cloth_main}, {cloth_detail}"])
             if res.candidates:
                 st.session_state.anchor_part = types.Part.from_bytes(data=res.candidates[0].content.parts[0].inline_data.data, mime_type='image/png')
                 st.session_state.wardrobe_task = f"Use the design from IMAGE 2 as the absolute master. Specs: {cloth_detail}."
-            else:
-                st.error("アンカー生成に失敗しました。")
-                st.stop()
+            else: st.stop()
 
-    # 2. ポーズ選出
+    # 3. 生成開始
     st.session_state.current_pose_paths = get_4_preset_poses(pose_pattern)
-    
-    # 3. 4枚一括生成（プログレス表示）
     progress_bar = st.progress(0)
-    status_text = st.empty()
-    final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
     identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
 
     for i, path in enumerate(st.session_state.current_pose_paths):
-        angle = path.split('_')[-1].split('.')[0]
-        status_text.text(f"生成中 ({i+1}/4): {angle} アングル...")
-        img = generate_image(client, path, identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, final_bg, enable_blur)
+        img = generate_image(client, path, identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur)
         if img:
             st.session_state.generated_images[i] = img
         progress_bar.progress((i + 1) / 4)
-    
-    status_text.text("✅ 全アングルの生成が完了しました！")
-    time.sleep(1)
-    status_text.empty()
     progress_bar.empty()
 
-# --- 6. 結果の表示エリア ---
+# --- 6. 結果表示 ---
 if any(st.session_state.generated_images):
     st.subheader("🖼️ 生成結果")
     cols = st.columns(2)
-    final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
     identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg') if source_img else None
 
     for i, img in enumerate(st.session_state.generated_images):
@@ -172,8 +163,6 @@ if any(st.session_state.generated_images):
             with cols[i % 2]:
                 angle = st.session_state.current_pose_paths[i].split('_')[-1].split('.')[0]
                 st.image(img, caption=angle, use_container_width=True)
-                
-                # 保存・撮り直しボタン
                 c1, c2 = st.columns(2)
                 with c1:
                     buf = io.BytesIO(); img.save(buf, format="JPEG")
@@ -181,8 +170,8 @@ if any(st.session_state.generated_images):
                 with c2:
                     if st.button(f"🔄 撮り直し", key=f"redo_{i}"):
                         if identity_part:
-                            with st.spinner(f"{angle}を再生成中..."):
-                                new_img = generate_image(client, st.session_state.current_pose_paths[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, final_bg, enable_blur)
+                            with st.spinner(f"撮り直し中..."):
+                                new_img = generate_image(client, st.session_state.current_pose_paths[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur)
                                 if new_img:
                                     st.session_state.generated_images[i] = new_img
                                     st.rerun()
