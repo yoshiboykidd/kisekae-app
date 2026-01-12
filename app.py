@@ -9,32 +9,24 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. 背景カテゴリー設定 ---
-BG_DATA = {
-    "Luxury (高級感)": [
-        "Luxury hotel presidential suite with warm soft lighting",
-        "Grand marble lobby of a 5-star hotel with elegant chandeliers",
-        "Sophisticated dim-lit hotel lounge with leather sofas",
-        "Modern high-end wine cellar with golden ambient lighting"
-    ],
-    "City (都会的)": [
-        "Shimmering city night view of Tokyo with colorful bokeh lights",
-        "Brightly lit neon street in Ginza at night with soft lens flares",
-        "Chic open-air cafe terrace with warm fairy lights",
-        "Modern waterfront balcony overlooking a lit-up bridge"
-    ],
-    "Studio (清楚)": [
-        "Minimalist studio with elegant white curtains and airy atmosphere",
-        "Antique style studio with white brick walls and soft daylight",
-        "Abstract soft pink and white studio backdrop with professional lighting",
-        "Bright studio with light wood flooring and cozy minimalist furniture"
-    ],
-    "Mood (情緒)": [
-        "Luxury infinity pool at night with turquoise water reflections",
-        "Elegant Japanese garden with cherry blossoms at night (Yozakura)",
-        "Traditional Japanese room with tatami and soft paper lantern light",
-        "Serene autumn garden with red maple leaves and soft evening sun"
-    ]
+# --- 1. 背景リスト設定 (表示名: AI用プロンプト) ---
+BG_OPTIONS = {
+    "高級スイートルーム (温かい照明)": "Luxury hotel presidential suite with warm soft lighting",
+    "大理石のホテルロビー (豪華なシャンデリア)": "Grand marble lobby of a 5-star hotel with elegant chandeliers",
+    "落ち着いたホテルラウンジ (夜)": "Sophisticated dim-lit hotel lounge with leather sofas",
+    "高級ワインセラー (黄金色の光)": "Modern high-end wine cellar with golden ambient lighting",
+    "都会の夜景 (キラキラしたボケ)": "Shimmering city night view of Tokyo with colorful bokeh lights",
+    "夜の銀座ネオン街 (柔らかなフレア)": "Brightly lit neon street in Ginza at night with soft lens flares",
+    "オープンカフェテラス (暖色の街灯)": "Chic open-air cafe terrace with warm fairy lights",
+    "水辺のテラス (ライトアップされた橋)": "Modern waterfront balcony overlooking a lit-up bridge",
+    "白のカーテンスタジオ (清楚・自然光)": "Minimalist studio with elegant white curtains and airy atmosphere",
+    "アンティーク白壁スタジオ (昼)": "Antique style studio with white brick walls and soft daylight",
+    "抽象的なピンク＆白背景 (撮影スタジオ)": "Abstract soft pink and white studio backdrop with professional lighting",
+    "明るい北欧風スタジオ (木目調)": "Bright studio with light wood flooring and cozy minimalist furniture",
+    "夜のインフィニティプール": "Luxury infinity pool at night with turquoise water reflections",
+    "夜桜の庭園": "Elegant Japanese garden with cherry blossoms at night (Yozakura)",
+    "伝統的な和室 (行灯の光)": "Traditional Japanese room with tatami and soft paper lantern light",
+    "紅葉の夕暮れ庭園": "Serene autumn garden with red maple leaves and soft evening sun"
 }
 
 # --- 2. ポーズ選出ロジック ---
@@ -118,7 +110,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.13")
+        st.title("🔐 Karinto Group Image Tool ver 2.14")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -131,7 +123,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.13")
+    st.title("📸 AI KISEKAE Manager ver 2.14")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -144,8 +136,9 @@ if check_password():
         cloth_main = st.selectbox("ベース衣装カテゴリー", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
         cloth_detail = st.text_input("衣装補足指示", placeholder="例：黒サテン、フリル付き")
         
-        # 背景カテゴリー選択
-        bg_category = st.selectbox("背景カテゴリー (毎回ランダム抽選)", list(BG_DATA.keys()))
+        # 背景を直接選択
+        selected_bg_label = st.selectbox("背景を選択", list(BG_OPTIONS.keys()))
+        selected_bg_prompt = BG_OPTIONS[selected_bg_label]
         
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=False)
@@ -161,10 +154,7 @@ if check_password():
             rows = [st.columns(2), st.columns(2)]
             placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
             
-            # --- 実行時に「特定の1箇所」をカテゴリーから抽選 ---
-            selected_bg = random.choice(BG_DATA[bg_category])
             session_id = random.randint(10000, 99999)
-            
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
             style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
@@ -182,19 +172,18 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # 衣装指示
                             if style_part:
                                 wardrobe_instruction = f"WARDROBE: Wear the EXACT SAME outfit from IMAGE 2 across all shots."
                             else:
                                 wardrobe_instruction = f"WARDROBE: FIXED design session ({session_id}). High-quality {cloth_main}, details: {cloth_detail}."
 
-                            # プロンプト (背景は固定された selected_bg を使用)
+                            # プロンプト (背景指示を固定)
                             prompt = (
                                 f"STRICT MANDATE: GENERATE ONE SINGLE VERTICAL PHOTOGRAPH ONLY. NO COLLAGE.\n"
-                                f"STYLE: High-end professional portrait. Shallow depth of field. 85mm f/1.8 bokeh.\n"
+                                f"STYLE: High-end professional portrait. Shallow depth of field. 85mm f/1.8 bokeh background.\n"
                                 f"1. IDENTITY (IMAGE 1): Use 100% of the woman's face and PHYSICAL BUILD from IMAGE 1. IMAGE 3 is just a joint guide.\n"
                                 f"2. {wardrobe_instruction}\n"
-                                f"3. BACKGROUND: {selected_bg}. Must be consistent throughout the set.\n"
+                                f"3. BACKGROUND: {selected_bg_prompt}.\n"
                                 f"4. POSE (IMAGE 3): Apply '{angle_label}' pose. One person in frame.\n"
                                 f"5. QUALITY: 8k photorealistic, Japanese woman, lips sealed."
                             )
@@ -216,6 +205,5 @@ if check_password():
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
-                            else: st.error("AI判定スキップ")
                         except Exception as e: st.error(f"エラー: {e}")
                         time.sleep(2.0)
