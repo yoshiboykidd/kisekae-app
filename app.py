@@ -8,228 +8,116 @@ import time
 import random
 import cv2
 import numpy as np
-from datetime import datetime
 
-# --- 1. 固定背景リスト ---
+# --- 1. 背景リスト ---
 BG_OPTIONS = {
     "高級スイートルーム (温かい照明)": "Luxury hotel presidential suite with warm soft lighting",
     "大理石のホテルロビー (豪華なシャンデリア)": "Grand marble lobby of a 5-star hotel with elegant chandeliers",
-    "落ち着いたホテルラウンジ (夜)": "Sophisticated dim-lit hotel lounge with leather sofas",
-    "高級ワインセラー (黄金色の光)": "Modern high-end wine cellar with golden ambient lighting",
     "都会の夜景 (キラキラしたボケ)": "Shimmering city night view of Tokyo with colorful bokeh lights",
-    "夜の銀座ネオン街 (柔らかなフレア)": "Brightly lit neon street in Ginza at night with soft lens flares",
-    "オープンカフェテラス (暖色の街灯)": "Chic open-air cafe terrace with warm fairy lights",
-    "水辺のテラス (ライトアップされた橋)": "Modern waterfront balcony overlooking a lit-up bridge",
     "陽光が差し込む明るいテラス (自然光)": "Sunny outdoor terrace with soft natural sunlight and greenery bokeh",
     "白を基調とした明るいリビング": "Bright minimalist luxury living room with white interior and soft morning light",
     "緑の見える午後の公園 (透明感)": "Beautiful park with lush green trees and soft afternoon sun, deep bokeh",
-    "白い建物が並ぶ静かな街路 (爽やか)": "Quiet street with elegant white buildings and clear blue sky",
     "夜のインフィニティプール": "Luxury infinity pool at night with turquoise water reflections",
-    "夜桜の庭園": "Elegant Japanese garden with cherry blossoms at night (Yozakura)",
-    "伝統的な和室 (行灯の光)": "Traditional Japanese room with tatami and soft paper lantern light",
-    "紅葉の夕暮れ庭園": "Serene autumn garden with red maple leaves and soft evening sun"
+    "伝統的な和室 (行灯の光)": "Traditional Japanese room with tatami and soft paper lantern light"
 }
 
-# --- 2. ポーズ選出ロジック ---
-def get_4_preset_poses(pattern="立ち3:座り1"):
+# --- 2. ポーズ選出・顔ブラー・認証 (ver 2.20を継承) ---
+def get_4_preset_poses(pattern):
     base_path = "presets/poses"
-    stand_dir = os.path.join(base_path, "standing")
-    sit_dir = os.path.join(base_path, "sitting")
-
-    def get_set_ids(directory):
-        if not os.path.exists(directory): return []
-        files = os.listdir(directory)
-        ids = []
-        for f in files:
-            parts = f.split('_')
-            if len(parts) >= 2:
-                ids.append(f"{parts[0]}_{parts[1]}")
-        return sorted(list(set(ids)))
-
-    def find_file(directory, set_id, angle_keywords):
-        if not os.path.exists(directory): return None
-        files = os.listdir(directory)
-        for f in files:
-            if f.startswith(set_id):
-                for kw in angle_keywords:
-                    if kw.lower() in f.lower():
-                        return os.path.join(directory, f)
+    stand_dir, sit_dir = os.path.join(base_path, "standing"), os.path.join(base_path, "sitting")
+    def get_set_ids(d): return sorted(list(set(f.split('_')[0] + "_" + f.split('_')[1] for f in os.listdir(d)))) if os.path.exists(d) else []
+    def find_file(d, sid, kws):
+        if not os.path.exists(d): return None
+        for f in os.listdir(d):
+            if f.startswith(sid) and any(kw.lower() in f.lower() for kw in kws): return os.path.join(d, f)
         return None
-
-    stand_sets = get_set_ids(stand_dir)
-    sit_sets = get_set_ids(sit_dir)
-
-    if pattern == "立ち3:座り1" and (len(stand_sets) < 3 or len(sit_sets) < 1):
-        st.error(f"セット不足: 立ち{len(stand_sets)}, 座り{len(sit_sets)}")
-        return []
-    
-    selected_paths = []
+    s_sets, t_sets = get_set_ids(stand_dir), get_set_ids(sit_dir)
+    res = []
     try:
         if pattern == "立ち3:座り1":
-            chosen_s = random.sample(stand_sets, 3)
-            chosen_t = random.sample(sit_sets, 1)
-            selected_paths.append(find_file(stand_dir, chosen_s[0], ["Front", "Frot"]))
-            selected_paths.append(find_file(stand_dir, chosen_s[1], ["Quarter"]))
-            selected_paths.append(find_file(stand_dir, chosen_s[2], ["Low"]))
-            selected_paths.append(find_file(sit_dir, chosen_t[0], ["High"]))
+            s = random.sample(s_sets, 3); t = random.sample(t_sets, 1)
+            res = [find_file(stand_dir, s[0], ["Front", "Frot"]), find_file(stand_dir, s[1], ["Quarter"]), find_file(stand_dir, s[2], ["Low"]), find_file(sit_dir, t[0], ["High"])]
         else:
-            chosen_s = random.sample(stand_sets, 2)
-            chosen_t = random.sample(sit_sets, 2)
-            selected_paths.append(find_file(stand_dir, chosen_s[0], ["Front", "Frot"]))
-            selected_paths.append(find_file(stand_dir, chosen_s[1], ["Low"]))
-            selected_paths.append(find_file(sit_dir, chosen_t[0], ["Quarter"]))
-            selected_paths.append(find_file(sit_dir, chosen_t[1], ["High"]))
-    except Exception as e:
-        st.error(f"ポーズ選出エラー: {e}")
-        return []
+            s = random.sample(s_sets, 2); t = random.sample(t_sets, 2)
+            res = [find_file(stand_dir, s[0], ["Front", "Frot"]), find_file(stand_dir, s[1], ["Low"]), find_file(sit_dir, t[0], ["Quarter"]), find_file(sit_dir, t[1], ["High"])]
+    except: return []
+    return [r for r in res if r]
 
-    return [p for p in selected_paths if p is not None]
+def apply_face_blur(img, radius):
+    cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    faces = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml').detectMultiScale(cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY), 1.05, 3)
+    if len(faces) == 0: return img
+    mask = Image.new('L', img.size, 0); draw = ImageDraw.Draw(mask)
+    for (x, y, w, h) in faces: draw.ellipse([x-w*0.1, y-h*0.2, x+w*1.1, y+h*1.1], fill=255)
+    return Image.composite(img.filter(ImageFilter.GaussianBlur(radius)), img, mask.filter(ImageFilter.GaussianBlur(radius/2)))
 
-# --- 3. 顔ブラー処理 ---
-def apply_face_blur(pil_image, blur_radius):
-    cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-    face_cascade = cv2.CascadeClassifier(cascade_path)
-    gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
-    if len(faces) == 0:
-        side_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
-        faces = side_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3)
-    if len(faces) == 0: return pil_image
-    blurred_image = pil_image.filter(ImageFilter.GaussianBlur(blur_radius))
-    mask = Image.new('L', pil_image.size, 0)
-    draw = ImageDraw.Draw(mask)
-    for (x, y, w, h) in faces:
-        margin_w = int(w * 0.15); margin_h = int(h * 0.2)
-        ellipse_box = [x - margin_w, y - margin_h * 1.3, x + w + margin_w, y + h + margin_h]
-        draw.ellipse(ellipse_box, fill=255, outline=255)
-    mask_blurred = mask.filter(ImageFilter.GaussianBlur(radius=blur_radius/2))
-    return Image.composite(blurred_image, pil_image, mask_blurred)
+if "password_correct" not in st.session_state: st.session_state["password_correct"] = False
+if not st.session_state["password_correct"]:
+    st.title("🔐 Login ver 2.21")
+    if st.text_input("合言葉", type="password") == "karin10" and st.button("ログイン"): st.session_state["password_correct"] = True; st.rerun()
+    st.stop()
 
-# --- 4. 認証機能 ---
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-    if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.20")
-        pwd = st.text_input("合言葉", type="password")
-        if st.button("ログイン"):
-            if pwd == "karin10": 
-                st.session_state["password_correct"] = True; st.rerun()
-            else: st.error("不一致")
-        return False
-    return True
+# --- 3. メインアプリ ---
+st.title("📸 AI KISEKAE Manager ver 2.21")
 
-# --- 5. メインアプリ ---
-if check_password():
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-    client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.20")
+with st.sidebar:
+    cast_name = st.text_input("👤 キャスト名", "cast")
+    source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
+    ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
+    cloth_main = st.selectbox("衣装カテゴリ", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
+    cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン、フリル付き")
+    selected_bg_label = st.selectbox("背景を選択", list(BG_OPTIONS.keys()))
+    bg_free_text = st.text_input("背景自由入力")
+    pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
+    enable_blur = st.checkbox("🛡️ 楕円顔ブラー")
+    run_button = st.button("✨ 掟を遵守して4枚一括生成")
 
-    with st.sidebar:
-        # 新設：キャスト名入力
-        cast_name = st.text_input("👤 キャスト名 (ファイル名に使用)", "cast")
-        
-        st.subheader("📁 写真アップロード")
-        source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
-        if source_img: st.image(source_img, use_container_width=True)
-        ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
-        if ref_img: st.image(ref_img, use_container_width=True)
-            
-        st.divider()
-        cloth_main = st.selectbox("ベース衣装カテゴリー", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
-        cloth_detail = st.text_input("衣装補足指示 (仕様書)", placeholder="例：黒サテン、フリル付き")
-        
-        st.divider()
-        st.subheader("🌄 背景設定")
-        selected_bg_label = st.selectbox("背景リストから選択", list(BG_OPTIONS.keys()))
-        bg_free_text = st.text_input("背景の自由入力 (優先)", placeholder="例: ひまわり畑")
-        
-        st.divider()
-        pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
-        enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=False)
-        blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable_blur else "中"
-        
-        st.divider()
-        run_button = st.button("✨ 掟を遵守して4枚一括生成")
+if run_button and source_img:
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    pose_paths = get_4_preset_poses(pose_pattern)
+    
+    if pose_paths:
+        # --- アンカー生成ロジック ---
+        final_style_part = None
+        if ref_img:
+            final_style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
+            wardrobe_task = f"Strictly replicate the outfit in IMAGE 2. Specs: {cloth_detail}."
+        else:
+            with st.spinner("衣装アンカー固定中..."):
+                anchor_res = client.models.generate_content(model='gemini-3-pro-image-preview', contents=[f"A catalog photo of {cloth_main}, {cloth_detail}"])
+                final_style_part = types.Part.from_bytes(data=anchor_res.candidates[0].content.parts[0].inline_data.data, mime_type='image/png')
+                wardrobe_task = f"Use the design from IMAGE 2 as the absolute master. Specs: {cloth_detail}."
 
-    if run_button and source_img:
-        pose_paths = get_4_preset_poses(pose_pattern)
-        if pose_paths:
-            # --- フェーズ1: 衣装アンカーの確定 ---
-            final_style_part = None
-            if ref_img:
-                final_style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
-                wardrobe_instruction = f"FIXED WARDROBE ANCHOR: Use exactly what is in IMAGE 2. Specs: {cloth_detail}."
-            else:
-                with st.spinner("衣装デザインを確定中 (アンカー生成)..."):
-                    try:
-                        anchor_prompt = f"Catalog photo of {cloth_main}, details: {cloth_detail}. High detail."
-                        anchor_res = client.models.generate_content(
-                            model='gemini-3-pro-image-preview',
-                            contents=[anchor_prompt],
-                            config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="1:1"))
-                        )
-                        if anchor_res.candidates and anchor_res.candidates[0].content.parts:
-                            anchor_data = anchor_res.candidates[0].content.parts[0].inline_data.data
-                            final_style_part = types.Part.from_bytes(data=anchor_data, mime_type='image/png')
-                            wardrobe_instruction = f"FIXED WARDROBE ANCHOR: Replica of IMAGE 2. Specs: {cloth_detail}."
-                        else: st.error("アンカー失敗"); st.stop()
-                    except Exception as e: st.error(f"エラー: {e}"); st.stop()
+        rows = [st.columns(2), st.columns(2)]; placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
+        final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
+        identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
 
-            # --- フェーズ2: 4ポーズ生成 ---
-            st.subheader("🖼️ 生成結果")
-            rows = [st.columns(2), st.columns(2)]
-            placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
-            
-            final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
-            identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
-            blur_radius = {"弱": 15, "中": 30, "強": 60}[blur_strength]
+        for i, path in enumerate(pose_paths):
+            angle = path.split('_')[-1].split('.')[0]
+            with placeholders[i]:
+                with st.spinner(f"{angle}..."):
+                    with open(path, "rb") as f: pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
+                    
+                    # --- プロンプト掟: アイデンティティ & 解剖学的固定 (ver 2.21) ---
+                    prompt = (
+                        f"CRITICAL MANDATE: ABSOLUTE CONSISTENCY REQUIRED.\n"
+                        f"1. FACE IDENTITY (IMAGE 1): The face must be a 100% perfect match to IMAGE 1. Do not alter features, eye shape, or nose bridge for any angle. It is a high-fidelity transplant of IMAGE 1.\n"
+                        f"2. ANATOMICAL MASS (IMAGE 1): The subject MUST have the EXACT physical body mass, bone structure, shoulder width, and waist-to-hip ratio as the woman in IMAGE 1. IMAGE 3 is an invisible ghost guide; IGNORE its body shape/thinness completely. Preserve the woman's curves and weight from IMAGE 1.\n"
+                        f"3. WARDROBE (IMAGE 2): {wardrobe_task}\n"
+                        f"4. SCENE: {final_bg}, professional 85mm portrait, shallow depth of field, Japanese woman, lips sealed."
+                    )
+                    
+                    response = client.models.generate_content(
+                        model='gemini-3-pro-image-preview',
+                        contents=[identity_part, final_style_part, pose_part, prompt],
+                        config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="2:3"))
+                    )
 
-            for i, path in enumerate(pose_paths):
-                angle_label = path.split('_')[-1].split('.')[0]
-                with placeholders[i]:
-                    with st.spinner(f"{angle_label}..."):
-                        try:
-                            with open(path, "rb") as f:
-                                pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
-                            
-                            contents = [identity_part, final_style_part, pose_part]
-                            prompt = (
-                                f"STRICT MANDATE: ONE SINGLE PERSON. NO COLLAGE.\n"
-                                f"1. BODY ANCHOR (IMAGE 1): Use 100% of woman's actual physique/mass from IMAGE 1. Discard IMAGE 3 proportions.\n"
-                                f"2. {wardrobe_instruction}\n"
-                                f"3. BACKGROUND: {final_bg}. 85mm portrait bokeh.\n"
-                                f"4. POSE: '{angle_label}' view from IMAGE 3 skeletal guide.\n"
-                                f"5. QUALITY: 8k photorealistic, Japanese woman, lips sealed."
-                            )
-                            response = client.models.generate_content(
-                                model='gemini-3-pro-image-preview',
-                                contents=contents + [prompt],
-                                config=types.GenerateContentConfig(
-                                    response_modalities=['IMAGE'],
-                                    safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
-                                    image_config=types.ImageConfig(aspect_ratio="2:3")
-                                )
-                            )
-
-                            if response.candidates and response.candidates[0].content.parts:
-                                img_data = response.candidates[0].content.parts[0].inline_data.data
-                                raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
-                                final_img = apply_face_blur(raw_img, blur_radius) if enable_blur else raw_img
-                                
-                                # 表示
-                                st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
-                                
-                                # 個別保存ボタン (ファイル名を指定)
-                                buf = io.BytesIO()
-                                final_img.save(buf, format="JPEG")
-                                st.download_button(
-                                    label=f"💾 {angle_label}を保存",
-                                    data=buf.getvalue(),
-                                    file_name=f"{cast_name}_{angle_label}.jpg",
-                                    mime="image/jpeg",
-                                    key=f"dl_{i}"
-                                )
-                        except Exception as e: st.error(f"エラー: {e}")
-                        time.sleep(1.5)
+                    if response.candidates and response.candidates[0].content.parts:
+                        img_data = response.candidates[0].content.parts[0].inline_data.data
+                        final_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
+                        if enable_blur: final_img = apply_face_blur(final_img, 30)
+                        st.image(final_img, caption=angle, use_container_width=True)
+                        buf = io.BytesIO(); final_img.save(buf, format="JPEG")
+                        st.download_button(f"💾 {angle}", buf.getvalue(), f"{cast_name}_{angle}.jpg", "image/jpeg", key=f"dl_{i}")
+                    time.sleep(1.5)
