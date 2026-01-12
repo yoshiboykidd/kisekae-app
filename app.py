@@ -8,8 +8,9 @@ import time
 import random
 import cv2
 import numpy as np
+from datetime import datetime
 
-# --- 1. 背景リスト設定 ---
+# --- 1. 固定背景リスト ---
 BG_OPTIONS = {
     "高級スイートルーム (温かい照明)": "Luxury hotel presidential suite with warm soft lighting",
     "大理石のホテルロビー (豪華なシャンデリア)": "Grand marble lobby of a 5-star hotel with elegant chandeliers",
@@ -110,7 +111,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.19")
+        st.title("🔐 Karinto Group Image Tool ver 2.20")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -123,10 +124,13 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.19")
+    st.title("📸 AI KISEKAE Manager ver 2.20")
 
     with st.sidebar:
-        st.subheader("👤 写真アップロード")
+        # 新設：キャスト名入力
+        cast_name = st.text_input("👤 キャスト名 (ファイル名に使用)", "cast")
+        
+        st.subheader("📁 写真アップロード")
         source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
         if source_img: st.image(source_img, use_container_width=True)
         ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
@@ -155,68 +159,50 @@ if check_password():
             # --- フェーズ1: 衣装アンカーの確定 ---
             final_style_part = None
             if ref_img:
-                # ユーザーが画像をアップロードした場合
                 final_style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
-                wardrobe_instruction = (
-                    f"FIXED WARDROBE ANCHOR: The subject MUST wear the IDENTICAL outfit shown in IMAGE 2.\n"
-                    f"STRICT DETAILS: {cloth_detail}.\n"
-                    f"Treat the text details as the EXACT specifications of the outfit in IMAGE 2."
-                )
+                wardrobe_instruction = f"FIXED WARDROBE ANCHOR: Use exactly what is in IMAGE 2. Specs: {cloth_detail}."
             else:
-                # 画像がない場合：AIがアンカー画像を1枚生成
                 with st.spinner("衣装デザインを確定中 (アンカー生成)..."):
                     try:
-                        anchor_prompt = f"A professional fashion catalog photograph of a {cloth_main}. Details: {cloth_detail}. Clear front view, high detail fabric texture."
-                        anchor_response = client.models.generate_content(
+                        anchor_prompt = f"Catalog photo of {cloth_main}, details: {cloth_detail}. High detail."
+                        anchor_res = client.models.generate_content(
                             model='gemini-3-pro-image-preview',
                             contents=[anchor_prompt],
                             config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="1:1"))
                         )
-                        if anchor_response.candidates and anchor_response.candidates[0].content.parts:
-                            anchor_img_data = anchor_response.candidates[0].content.parts[0].inline_data.data
-                            final_style_part = types.Part.from_bytes(data=anchor_img_data, mime_type='image/png')
-                            wardrobe_instruction = (
-                                f"FIXED WARDROBE ANCHOR: The subject MUST wear the EXACT outfit from IMAGE 2 (Session Anchor).\n"
-                                f"STRICT DETAILS: {cloth_detail}.\n"
-                                f"Every button, lace, and fabric texture must be 100% consistent with IMAGE 2."
-                            )
-                        else: st.error("アンカー生成失敗"); st.stop()
+                        if anchor_res.candidates and anchor_res.candidates[0].content.parts:
+                            anchor_data = anchor_res.candidates[0].content.parts[0].inline_data.data
+                            final_style_part = types.Part.from_bytes(data=anchor_data, mime_type='image/png')
+                            wardrobe_instruction = f"FIXED WARDROBE ANCHOR: Replica of IMAGE 2. Specs: {cloth_detail}."
+                        else: st.error("アンカー失敗"); st.stop()
                     except Exception as e: st.error(f"エラー: {e}"); st.stop()
 
-            # --- フェーズ2: 4ポーズの一括生成 ---
+            # --- フェーズ2: 4ポーズ生成 ---
             st.subheader("🖼️ 生成結果")
             rows = [st.columns(2), st.columns(2)]
             placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
             
-            if bg_free_text.strip():
-                final_bg_prompt = f"{bg_free_text.strip()}, high-end portrait bokeh background"
-            else:
-                final_bg_prompt = BG_OPTIONS[selected_bg_label]
-            
+            final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
-            blur_radius_map = {"弱": 15, "中": 30, "強": 60}
-            current_blur_radius = blur_radius_map[blur_strength]
+            blur_radius = {"弱": 15, "中": 30, "強": 60}[blur_strength]
 
             for i, path in enumerate(pose_paths):
                 angle_label = path.split('_')[-1].split('.')[0]
                 with placeholders[i]:
-                    with st.spinner(f"{angle_label}生成中..."):
+                    with st.spinner(f"{angle_label}..."):
                         try:
                             with open(path, "rb") as f:
                                 pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
                             
-                            # 全生成で同じ「final_style_part」をIMAGE 2として使用
                             contents = [identity_part, final_style_part, pose_part]
-
                             prompt = (
-                                f"STRICT MANDATE: GENERATE ONE SINGLE PERSON ONLY. NO COLLAGE.\n"
-                                f"1. BODY ANCHOR (IMAGE 1): Use 100% of the woman's actual physique/mass from IMAGE 1. Discard IMAGE 3's thinness.\n"
+                                f"STRICT MANDATE: ONE SINGLE PERSON. NO COLLAGE.\n"
+                                f"1. BODY ANCHOR (IMAGE 1): Use 100% of woman's actual physique/mass from IMAGE 1. Discard IMAGE 3 proportions.\n"
                                 f"2. {wardrobe_instruction}\n"
-                                f"3. BACKGROUND: {final_bg_prompt}.\n"
-                                f"4. POSE (IMAGE 3): Skeleton-only guide for '{angle_label}' angle. Maintain natural human posture.\n"
-                                f"5. STYLE: 8k photorealistic, 85mm portrait bokeh, Japanese woman, lips sealed."
+                                f"3. BACKGROUND: {final_bg}. 85mm portrait bokeh.\n"
+                                f"4. POSE: '{angle_label}' view from IMAGE 3 skeletal guide.\n"
+                                f"5. QUALITY: 8k photorealistic, Japanese woman, lips sealed."
                             )
-
                             response = client.models.generate_content(
                                 model='gemini-3-pro-image-preview',
                                 contents=contents + [prompt],
@@ -230,9 +216,20 @@ if check_password():
                             if response.candidates and response.candidates[0].content.parts:
                                 img_data = response.candidates[0].content.parts[0].inline_data.data
                                 raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
-                                final_img = apply_face_blur(raw_img, current_blur_radius) if enable_blur else raw_img
+                                final_img = apply_face_blur(raw_img, blur_radius) if enable_blur else raw_img
+                                
+                                # 表示
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
-                                buf = io.BytesIO(); final_img.save(buf, format="JPEG")
-                                st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
-                        except Exception as e: st.error(f"生成エラー: {e}")
-                        time.sleep(1.8)
+                                
+                                # 個別保存ボタン (ファイル名を指定)
+                                buf = io.BytesIO()
+                                final_img.save(buf, format="JPEG")
+                                st.download_button(
+                                    label=f"💾 {angle_label}を保存",
+                                    data=buf.getvalue(),
+                                    file_name=f"{cast_name}_{angle_label}.jpg",
+                                    mime="image/jpeg",
+                                    key=f"dl_{i}"
+                                )
+                        except Exception as e: st.error(f"エラー: {e}")
+                        time.sleep(1.5)
