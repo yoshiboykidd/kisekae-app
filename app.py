@@ -90,7 +90,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.10")
+        st.title("🔐 Karinto Group Image Tool ver 2.11")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -103,7 +103,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.10")
+    st.title("📸 AI KISEKAE Manager ver 2.11")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -135,6 +135,9 @@ if check_password():
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
             current_blur_radius = blur_radius_map[blur_strength]
 
+            # セッションの一貫性を保つためのランダムキー
+            session_id = random.randint(10000, 99999)
+
             for i, path in enumerate(pose_paths):
                 angle_label = path.split('_')[-1].split('.')[0]
                 with placeholders[i]:
@@ -147,25 +150,26 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # --- プロンプト掟強化 (ver 2.10: 衣装ソースの動的切替) ---
+                            # --- プロンプト掟強化 (ver 2.11: 一貫性重視) ---
                             wardrobe_instruction = ""
                             if style_part:
                                 wardrobe_instruction = (
-                                    f"WARDROBE MASTER (IMAGE 2): The woman must wear the EXACT SAME {cloth_main} shown in IMAGE 2. "
-                                    f"Replicate design, fabric, and texture 100%. IGNORE any text description if it differs from IMAGE 2."
+                                    f"WARDROBE LOCK: The woman must wear the EXACT SAME {cloth_main} shown in IMAGE 2. "
+                                    f"Copy design, fabric, and textures 100% across all shots."
                                 )
                             else:
                                 wardrobe_instruction = (
-                                    f"WARDROBE DESCRIPTION: Create a high-quality {cloth_main} based on: {cloth_detail}. "
-                                    f"Ensure the outfit looks realistic and professionally designed."
+                                    f"WARDROBE CONSISTENCY: This is photo {i+1} of a 4-photo set (Session ID: {session_id}). "
+                                    f"The outfit is a high-quality {cloth_main} with these FIXED details: {cloth_detail}. "
+                                    f"Maintain the EXACT same dress design, color, and fabric as the other photos in this session."
                                 )
 
                             prompt = (
-                                f"CRITICAL: GENERATE ONE SINGLE PERSON ONLY. NO SPLIT SCREEN. NO COLLAGE.\n"
-                                f"1. IDENTITY & BODY (IMAGE 1): Use 100% of the woman's face and PHYSICAL BUILD (height, weight, curves) from IMAGE 1. IMAGE 3 is ONLY a joint-guide.\n"
+                                f"STRICT MANDATE: GENERATE ONE SINGLE PHOTOGRAPH ONLY. NO COLLAGE.\n"
+                                f"1. IDENTITY (IMAGE 1): Use 100% of the woman's actual face and body shape from IMAGE 1. IMAGE 3 is just a joint guide.\n"
                                 f"2. {wardrobe_instruction}\n"
-                                f"3. POSE (IMAGE 3): Follow the joints for the '{angle_label}' angle but keep the body shape from IMAGE 1.\n"
-                                f"4. QUALITY: 8k photorealistic, {bg}, Japanese woman, lips sealed."
+                                f"3. POSE (IMAGE 3): Apply the '{angle_label}' pose coordinates to the woman's body.\n"
+                                f"4. QUALITY: 8k photorealistic, {bg}, Japanese woman, lips sealed. All photos in this set must look like they were taken at the same time."
                             )
 
                             response = client.models.generate_content(
