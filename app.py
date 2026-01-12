@@ -90,7 +90,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.8")
+        st.title("🔐 Karinto Group Image Tool ver 2.9")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -103,34 +103,37 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.8")
+    st.title("📸 AI KISEKAE Manager ver 2.9")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
         source_img = st.file_uploader("キャスト写真", type=['png', 'jpg', 'jpeg'])
         if source_img: st.image(source_img, use_container_width=True)
-        ref_img = st.file_uploader("衣装参考", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("衣装参考 (必須)", type=['png', 'jpg', 'jpeg'])
         if ref_img: st.image(ref_img, use_container_width=True)
             
         st.divider()
-        cloth_main = st.selectbox("ベース衣装", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服"])
-        cloth_detail = st.text_input("衣装詳細指示", placeholder="例：黒サテン、フリル付き")
+        # 衣装参考が必須なので、ベース衣装の選択肢を少し変更
+        cloth_main = st.selectbox("衣装カテゴリ (参考画像が優先されます)", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
+        cloth_detail = st.text_input("衣装補足指示 (任意)", placeholder="例：フリルを強調、丈を少し短く")
         bg = st.selectbox("背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "ビーチ"])
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
-        enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=True)
+        
+        # ブラーチェックはデフォルトOFFに変更 (ご要望に合わせて)
+        enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=False)
         blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable_blur else "中"
         
         st.divider()
         run_button = st.button("✨ 掟を遵守して4枚一括生成")
 
-    if run_button and source_img:
+    if run_button and source_img and ref_img: # 衣装参考を必須化
         pose_paths = get_4_preset_poses(pose_pattern)
         if pose_paths:
             st.subheader("🖼️ 生成結果")
             rows = [st.columns(2), st.columns(2)]
             placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
-            style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
+            style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
             current_blur_radius = blur_radius_map[blur_strength]
 
@@ -141,18 +144,17 @@ if check_password():
                         try:
                             with open(path, "rb") as f:
                                 pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
-                            contents = [identity_part]
-                            if style_part: contents.append(style_part)
-                            contents.append(pose_part)
+                            contents = [identity_part, style_part, pose_part]
 
-                            # --- プロンプト掟強化 (ver 2.8: 完全単体出力命令) ---
+                            # --- プロンプト掟強化 (ver 2.9: 衣装画像絶対優先) ---
                             prompt = (
-                                f"CRITICAL OUTPUT FORMAT: GENERATE EXACTLY ONE SINGLE VERTICAL PHOTOGRAPH. DO NOT CREATE A GRID, COLLAGE, OR SPLIT SCREEN. ONLY ONE PERSON IN THE FRAME.\n"
-                                f"TASK: Create a single portrait of the real Japanese woman from IMAGE 1.\n"
-                                f"1. BODY SOURCE (IMAGE 1): The subject must have the EXACT physical build and curves of the woman in IMAGE 1. IMAGE 3 is only an invisible wireframe for the pose, not body shape.\n"
-                                f"2. ATTIRE (IMAGE 2): She is wearing the identical {cloth_main} with '{cloth_detail}' as seen in IMAGE 2.\n"
-                                f"3. POSE (IMAGE 3): Adopting the specific '{angle_label}' pose defined by the joints in IMAGE 3.\n"
-                                f"4. QUALITY: 8k photorealistic professional photograph, {bg}, lips sealed."
+                                f"CRITICAL OUTPUT FORMAT: GENERATE EXACTLY ONE SINGLE VERTICAL PHOTOGRAPH. NO SPLIT SCREEN.\n"
+                                f"TASK: Create a portrait of the woman from IMAGE 1, wearing the outfit from IMAGE 2.\n"
+                                f"1. BODY & FACE (IMAGE 1): Use the EXACT physique, curves, and 100% facial features of the woman in IMAGE 1. IMAGE 3 is only an invisible pose guide.\n"
+                                f"2. WARDROBE ABSOLUTE (IMAGE 2): The output MUST be a perfect visual replica of the outfit in IMAGE 2. Replicate its exact design, fabric, color, and texture precisely.\n"
+                                f"3. CATEGORY INFO (Text): The outfit category is '{cloth_main}' with details '{cloth_detail}'. NOTE: If this text conflicts with the visual appearance in IMAGE 2, IMAGE 2 overrides the text.\n"
+                                f"4. POSE (IMAGE 3): Adopt the specified '{angle_label}' pose.\n"
+                                f"5. QUALITY: 8k photorealistic, {bg}, lips sealed."
                             )
 
                             response = client.models.generate_content(
@@ -172,5 +174,6 @@ if check_password():
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
+                            else: st.error("AI判定により画像が生成されませんでした。")
                         except Exception as e: st.error(f"エラー: {e}")
-                        time.sleep(2.0) # 安全のためウェイトを少し延長
+                        time.sleep(2.0)
