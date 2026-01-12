@@ -9,7 +9,7 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. 背景リスト設定 (表示名: AI用プロンプト) ---
+# --- 1. 固定背景リスト ---
 BG_OPTIONS = {
     "高級スイートルーム (温かい照明)": "Luxury hotel presidential suite with warm soft lighting",
     "大理石のホテルロビー (豪華なシャンデリア)": "Grand marble lobby of a 5-star hotel with elegant chandeliers",
@@ -19,10 +19,10 @@ BG_OPTIONS = {
     "夜の銀座ネオン街 (柔らかなフレア)": "Brightly lit neon street in Ginza at night with soft lens flares",
     "オープンカフェテラス (暖色の街灯)": "Chic open-air cafe terrace with warm fairy lights",
     "水辺のテラス (ライトアップされた橋)": "Modern waterfront balcony overlooking a lit-up bridge",
-    "白のカーテンスタジオ (清楚・自然光)": "Minimalist studio with elegant white curtains and airy atmosphere",
-    "アンティーク白壁スタジオ (昼)": "Antique style studio with white brick walls and soft daylight",
-    "抽象的なピンク＆白背景 (撮影スタジオ)": "Abstract soft pink and white studio backdrop with professional lighting",
-    "明るい北欧風スタジオ (木目調)": "Bright studio with light wood flooring and cozy minimalist furniture",
+    "陽光が差し込む明るいテラス (自然光)": "Sunny outdoor terrace with soft natural sunlight and greenery bokeh",
+    "白を基調とした明るいリビング": "Bright minimalist luxury living room with white interior and soft morning light",
+    "緑の見える午後の公園 (透明感)": "Beautiful park with lush green trees and soft afternoon sun, deep bokeh",
+    "白い建物が並ぶ静かな街路 (爽やか)": "Quiet street with elegant white buildings and clear blue sky",
     "夜のインフィニティプール": "Luxury infinity pool at night with turquoise water reflections",
     "夜桜の庭園": "Elegant Japanese garden with cherry blossoms at night (Yozakura)",
     "伝統的な和室 (行灯の光)": "Traditional Japanese room with tatami and soft paper lantern light",
@@ -110,7 +110,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.14")
+        st.title("🔐 Karinto Group Image Tool ver 2.16")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -123,7 +123,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.14")
+    st.title("📸 AI KISEKAE Manager ver 2.16")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -136,10 +136,13 @@ if check_password():
         cloth_main = st.selectbox("ベース衣装カテゴリー", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
         cloth_detail = st.text_input("衣装補足指示", placeholder="例：黒サテン、フリル付き")
         
-        # 背景を直接選択
-        selected_bg_label = st.selectbox("背景を選択", list(BG_OPTIONS.keys()))
-        selected_bg_prompt = BG_OPTIONS[selected_bg_label]
+        st.divider()
+        # 背景選択 (リスト or 自由入力)
+        st.subheader("🌄 背景設定")
+        selected_bg_label = st.selectbox("背景リストから選択", list(BG_OPTIONS.keys()))
+        bg_free_text = st.text_input("背景の自由入力 (入力がある場合はこちらを優先)", placeholder="例: ひまわり畑、夕暮れの海岸")
         
+        st.divider()
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=False)
         blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable_blur else "中"
@@ -154,6 +157,12 @@ if check_password():
             rows = [st.columns(2), st.columns(2)]
             placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
             
+            # --- 背景決定ロジック (自由入力を優先) ---
+            if bg_free_text.strip():
+                final_bg_prompt = f"{bg_free_text.strip()}, high-end portrait bokeh background"
+            else:
+                final_bg_prompt = BG_OPTIONS[selected_bg_label]
+            
             session_id = random.randint(10000, 99999)
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
             style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
@@ -167,7 +176,6 @@ if check_password():
                         try:
                             with open(path, "rb") as f:
                                 pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
-                            
                             contents = [identity_part]
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
@@ -177,13 +185,12 @@ if check_password():
                             else:
                                 wardrobe_instruction = f"WARDROBE: FIXED design session ({session_id}). High-quality {cloth_main}, details: {cloth_detail}."
 
-                            # プロンプト (背景指示を固定)
                             prompt = (
                                 f"STRICT MANDATE: GENERATE ONE SINGLE VERTICAL PHOTOGRAPH ONLY. NO COLLAGE.\n"
                                 f"STYLE: High-end professional portrait. Shallow depth of field. 85mm f/1.8 bokeh background.\n"
                                 f"1. IDENTITY (IMAGE 1): Use 100% of the woman's face and PHYSICAL BUILD from IMAGE 1. IMAGE 3 is just a joint guide.\n"
                                 f"2. {wardrobe_instruction}\n"
-                                f"3. BACKGROUND: {selected_bg_prompt}.\n"
+                                f"3. BACKGROUND: {final_bg_prompt}.\n"
                                 f"4. POSE (IMAGE 3): Apply '{angle_label}' pose. One person in frame.\n"
                                 f"5. QUALITY: 8k photorealistic, Japanese woman, lips sealed."
                             )
@@ -205,5 +212,6 @@ if check_password():
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
+                            else: st.error("AI判定により画像が生成されませんでした。")
                         except Exception as e: st.error(f"エラー: {e}")
                         time.sleep(2.0)
