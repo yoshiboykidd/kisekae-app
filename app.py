@@ -93,56 +93,60 @@ def generate_image(client, path, identity_part, anchor_part, wardrobe_task, bg_p
 # --- 3. 認証 ---
 if "password_correct" not in st.session_state: st.session_state.password_correct = False
 if not st.session_state.password_correct:
-    st.title("🔐 Login ver 2.26")
+    st.title("🔐 Login ver 2.27")
     if st.text_input("合言葉", type="password") == "karin10" and st.button("ログイン"):
         st.session_state.password_correct = True; st.rerun()
     st.stop()
 
 # --- 4. メインUI ---
-st.title("📸 AI KISEKAE Manager ver 2.26")
+st.title("📸 AI KISEKAE Manager ver 2.27")
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 with st.sidebar:
     cast_name = st.text_input("👤 キャスト名", "cast")
-    source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
-    ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
     
+    # 修正：プレビュー表示を確実にするためのロジック
+    source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
+    if source_img:
+        st.image(source_img, caption="キャスト写真 プレビュー", use_container_width=True)
+    
+    ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
+    if ref_img:
+        st.image(ref_img, caption="衣装参考 プレビュー", use_container_width=True)
+            
     st.divider()
     cloth_main = st.selectbox("衣装カテゴリ", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
     cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン、フリル付き")
     
     st.divider()
-    st.subheader("🌅 背景・ロケーション設定")
-    bg_text = st.text_input("背景の場所を自由入力", "高級ホテルの部屋")
-    time_of_day = st.radio("時間帯を選択", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"], index=0)
+    st.subheader("🌅 背景・時間帯")
+    bg_text = st.text_input("場所を自由入力", "高級ホテルの部屋")
+    time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"], index=0)
     
     st.divider()
     pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
-    enable_blur = st.checkbox("🛡️ 楕円顔ブラーを適用")
+    enable_blur = st.checkbox("🛡️ 楕円顔ブラー")
     
     run_btn = st.button("✨ 4枚一括生成 (新規)")
 
 # --- 5. 生成ロジック ---
 if run_btn and source_img:
-    # 1. 背景プロンプト
     time_mods = {
-        "昼 (Daylight)": "bright natural daylight, high-key lighting, soft sunbeams",
-        "夕方 (Golden Hour)": "warm sunset lighting, golden hour glow, cinematic atmosphere",
-        "夜 (Night)": "nighttime atmosphere, artificial city lights, dramatic contrast"
+        "昼 (Daylight)": "bright natural daylight, soft sunbeams",
+        "夕方 (Golden Hour)": "warm sunset lighting, golden hour glow",
+        "夜 (Night)": "nighttime atmosphere, dramatic artificial lights"
     }
     st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, beautifully blurred bokeh background"
 
-    # 2. 衣装アンカー確定 (エラー修正箇所)
     if ref_img:
         st.session_state.anchor_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
         st.session_state.wardrobe_task = f"Strictly replicate IMAGE 2. Specs: {cloth_detail}."
     else:
-        with st.spinner("衣装デザインを固定中..."):
+        with st.spinner("衣装デザイン固定中..."):
             try:
-                # --- 修正: config を追加して画像生成を明示 ---
                 res = client.models.generate_content(
                     model='gemini-3-pro-image-preview', 
-                    contents=[f"A professional catalog photograph of a {cloth_main}. Specifications: {cloth_detail}. Flat lay or front view."],
+                    contents=[f"A professional catalog photograph of a {cloth_main}. {cloth_detail}."],
                     config=types.GenerateContentConfig(
                         response_modalities=['IMAGE'],
                         safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
@@ -151,15 +155,10 @@ if run_btn and source_img:
                 )
                 if res.candidates and res.candidates[0].content.parts:
                     st.session_state.anchor_part = types.Part.from_bytes(data=res.candidates[0].content.parts[0].inline_data.data, mime_type='image/png')
-                    st.session_state.wardrobe_task = f"Use the design from IMAGE 2 as the absolute master. Specs: {cloth_detail}."
-                else:
-                    st.error("衣装アンカーの生成がAIにより拒否されました。指示内容を和らげてみてください。")
-                    st.stop()
-            except Exception as e:
-                st.error(f"衣装アンカー生成中にエラーが発生しました: {e}")
-                st.stop()
+                    st.session_state.wardrobe_task = f"Use IMAGE 2 as absolute master. Specs: {cloth_detail}."
+                else: st.stop()
+            except Exception as e: st.error(f"Error: {e}"); st.stop()
 
-    # 3. 生成開始
     st.session_state.current_pose_paths = get_4_preset_poses(pose_pattern)
     progress_bar = st.progress(0)
     identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
