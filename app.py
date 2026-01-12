@@ -90,7 +90,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.11")
+        st.title("🔐 Karinto Group Image Tool ver 2.12")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -103,7 +103,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.11")
+    st.title("📸 AI KISEKAE Manager ver 2.12")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -135,7 +135,6 @@ if check_password():
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
             current_blur_radius = blur_radius_map[blur_strength]
 
-            # セッションの一貫性を保つためのランダムキー
             session_id = random.randint(10000, 99999)
 
             for i, path in enumerate(pose_paths):
@@ -150,26 +149,24 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # --- プロンプト掟強化 (ver 2.11: 一貫性重視) ---
+                            # --- プロンプト掟強化 (ver 2.12: ボケ感の追加) ---
                             wardrobe_instruction = ""
                             if style_part:
                                 wardrobe_instruction = (
-                                    f"WARDROBE LOCK: The woman must wear the EXACT SAME {cloth_main} shown in IMAGE 2. "
-                                    f"Copy design, fabric, and textures 100% across all shots."
+                                    f"WARDROBE: Wear the EXACT SAME outfit from IMAGE 2 across all shots. Consistent design and fabric."
                                 )
                             else:
                                 wardrobe_instruction = (
-                                    f"WARDROBE CONSISTENCY: This is photo {i+1} of a 4-photo set (Session ID: {session_id}). "
-                                    f"The outfit is a high-quality {cloth_main} with these FIXED details: {cloth_detail}. "
-                                    f"Maintain the EXACT same dress design, color, and fabric as the other photos in this session."
+                                    f"WARDROBE: FIXED design for this session ({session_id}). High-quality {cloth_main}, details: {cloth_detail}."
                                 )
 
                             prompt = (
                                 f"STRICT MANDATE: GENERATE ONE SINGLE PHOTOGRAPH ONLY. NO COLLAGE.\n"
-                                f"1. IDENTITY (IMAGE 1): Use 100% of the woman's actual face and body shape from IMAGE 1. IMAGE 3 is just a joint guide.\n"
+                                f"STYLE: High-end professional portrait photography. Shallow depth of field. Beautifully blurred background (bokeh).\n"
+                                f"1. IDENTITY (IMAGE 1): Use 100% of the woman's actual face and physical build from IMAGE 1. IMAGE 3 is just a joint guide.\n"
                                 f"2. {wardrobe_instruction}\n"
-                                f"3. POSE (IMAGE 3): Apply the '{angle_label}' pose coordinates to the woman's body.\n"
-                                f"4. QUALITY: 8k photorealistic, {bg}, Japanese woman, lips sealed. All photos in this set must look like they were taken at the same time."
+                                f"3. POSE (IMAGE 3): Apply '{angle_label}' pose. One person in frame.\n"
+                                f"4. QUALITY: 8k photorealistic, 85mm f/1.8 lens, {bg}, Japanese woman, lips sealed."
                             )
 
                             response = client.models.generate_content(
