@@ -90,7 +90,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.9")
+        st.title("🔐 Karinto Group Image Tool ver 2.10")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -103,37 +103,35 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.9")
+    st.title("📸 AI KISEKAE Manager ver 2.10")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
         source_img = st.file_uploader("キャスト写真", type=['png', 'jpg', 'jpeg'])
         if source_img: st.image(source_img, use_container_width=True)
-        ref_img = st.file_uploader("衣装参考 (必須)", type=['png', 'jpg', 'jpeg'])
+        ref_img = st.file_uploader("衣装参考 (任意)", type=['png', 'jpg', 'jpeg'])
         if ref_img: st.image(ref_img, use_container_width=True)
             
         st.divider()
-        # 衣装参考が必須なので、ベース衣装の選択肢を少し変更
-        cloth_main = st.selectbox("衣装カテゴリ (参考画像が優先されます)", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
-        cloth_detail = st.text_input("衣装補足指示 (任意)", placeholder="例：フリルを強調、丈を少し短く")
+        cloth_main = st.selectbox("ベース衣装カテゴリー", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
+        cloth_detail = st.text_input("衣装補足指示", placeholder="例：黒サテン、フリル付き")
         bg = st.selectbox("背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "ビーチ"])
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         
-        # ブラーチェックはデフォルトOFFに変更 (ご要望に合わせて)
         enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=False)
         blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable_blur else "中"
         
         st.divider()
         run_button = st.button("✨ 掟を遵守して4枚一括生成")
 
-    if run_button and source_img and ref_img: # 衣装参考を必須化
+    if run_button and source_img:
         pose_paths = get_4_preset_poses(pose_pattern)
         if pose_paths:
             st.subheader("🖼️ 生成結果")
             rows = [st.columns(2), st.columns(2)]
             placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
-            style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
+            style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
             current_blur_radius = blur_radius_map[blur_strength]
 
@@ -144,17 +142,30 @@ if check_password():
                         try:
                             with open(path, "rb") as f:
                                 pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
-                            contents = [identity_part, style_part, pose_part]
+                            
+                            contents = [identity_part]
+                            if style_part: contents.append(style_part)
+                            contents.append(pose_part)
 
-                            # --- プロンプト掟強化 (ver 2.9: 衣装画像絶対優先) ---
+                            # --- プロンプト掟強化 (ver 2.10: 衣装ソースの動的切替) ---
+                            wardrobe_instruction = ""
+                            if style_part:
+                                wardrobe_instruction = (
+                                    f"WARDROBE MASTER (IMAGE 2): The woman must wear the EXACT SAME {cloth_main} shown in IMAGE 2. "
+                                    f"Replicate design, fabric, and texture 100%. IGNORE any text description if it differs from IMAGE 2."
+                                )
+                            else:
+                                wardrobe_instruction = (
+                                    f"WARDROBE DESCRIPTION: Create a high-quality {cloth_main} based on: {cloth_detail}. "
+                                    f"Ensure the outfit looks realistic and professionally designed."
+                                )
+
                             prompt = (
-                                f"CRITICAL OUTPUT FORMAT: GENERATE EXACTLY ONE SINGLE VERTICAL PHOTOGRAPH. NO SPLIT SCREEN.\n"
-                                f"TASK: Create a portrait of the woman from IMAGE 1, wearing the outfit from IMAGE 2.\n"
-                                f"1. BODY & FACE (IMAGE 1): Use the EXACT physique, curves, and 100% facial features of the woman in IMAGE 1. IMAGE 3 is only an invisible pose guide.\n"
-                                f"2. WARDROBE ABSOLUTE (IMAGE 2): The output MUST be a perfect visual replica of the outfit in IMAGE 2. Replicate its exact design, fabric, color, and texture precisely.\n"
-                                f"3. CATEGORY INFO (Text): The outfit category is '{cloth_main}' with details '{cloth_detail}'. NOTE: If this text conflicts with the visual appearance in IMAGE 2, IMAGE 2 overrides the text.\n"
-                                f"4. POSE (IMAGE 3): Adopt the specified '{angle_label}' pose.\n"
-                                f"5. QUALITY: 8k photorealistic, {bg}, lips sealed."
+                                f"CRITICAL: GENERATE ONE SINGLE PERSON ONLY. NO SPLIT SCREEN. NO COLLAGE.\n"
+                                f"1. IDENTITY & BODY (IMAGE 1): Use 100% of the woman's face and PHYSICAL BUILD (height, weight, curves) from IMAGE 1. IMAGE 3 is ONLY a joint-guide.\n"
+                                f"2. {wardrobe_instruction}\n"
+                                f"3. POSE (IMAGE 3): Follow the joints for the '{angle_label}' angle but keep the body shape from IMAGE 1.\n"
+                                f"4. QUALITY: 8k photorealistic, {bg}, Japanese woman, lips sealed."
                             )
 
                             response = client.models.generate_content(
