@@ -21,12 +21,15 @@ BG_OPTIONS = {
     "伝統的な和室 (行灯の光)": "Traditional Japanese room with tatami and soft paper lantern light"
 }
 
+# セッション管理用変数の初期化
 if "generated_images" not in st.session_state:
     st.session_state.generated_images = [None] * 4
 if "current_pose_paths" not in st.session_state:
     st.session_state.current_pose_paths = []
 if "anchor_part" not in st.session_state:
     st.session_state.anchor_part = None
+if "wardrobe_task" not in st.session_state:
+    st.session_state.wardrobe_task = ""
 
 # --- 2. ユーティリティ関数 ---
 
@@ -61,7 +64,7 @@ def get_4_preset_poses(pattern):
     except: return []
     return [r for r in res if r]
 
-def generate_image(client, idx, path, identity_part, anchor_part, wardrobe_task, bg_prompt, enable_blur, cast_name):
+def generate_image(client, path, identity_part, anchor_part, wardrobe_task, bg_prompt, enable_blur):
     angle = path.split('_')[-1].split('.')[0]
     with open(path, "rb") as f:
         pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
@@ -96,13 +99,13 @@ def generate_image(client, idx, path, identity_part, anchor_part, wardrobe_task,
 # --- 3. 認証 ---
 if "password_correct" not in st.session_state: st.session_state.password_correct = False
 if not st.session_state.password_correct:
-    st.title("🔐 Login ver 2.23")
+    st.title("🔐 Login ver 2.24")
     if st.text_input("合言葉", type="password") == "karin10" and st.button("ログイン"):
         st.session_state.password_correct = True; st.rerun()
     st.stop()
 
 # --- 4. メインUI ---
-st.title("📸 AI KISEKAE Manager ver 2.23")
+st.title("📸 AI KISEKAE Manager ver 2.24")
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 with st.sidebar:
@@ -117,48 +120,69 @@ with st.sidebar:
     enable_blur = st.checkbox("🛡️ 楕円顔ブラーを適用")
     
     st.divider()
-    if st.button("✨ 4枚一括生成 (新規)") and source_img:
-        st.session_state.current_pose_paths = get_4_preset_poses(pose_pattern)
-        # アンカー確定
-        if ref_img:
-            st.session_state.anchor_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
-        else:
-            with st.spinner("衣装デザインを固定中..."):
-                res = client.models.generate_content(model='gemini-3-pro-image-preview', contents=[f"Catalog photo of {cloth_main}, {cloth_detail}"])
-                st.session_state.anchor_part = types.Part.from_bytes(data=res.candidates[0].content.parts[0].inline_data.data, mime_type='image/png')
-        
-        # 4枚生成実行
-        final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
-        identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
-        wardrobe_task = f"Replicate IMAGE 2 design exactly. Specs: {cloth_detail}."
-        
-        for i, path in enumerate(st.session_state.current_pose_paths):
-            st.session_state.generated_images[i] = generate_image(client, i, path, identity_part, st.session_state.anchor_part, wardrobe_task, final_bg, enable_blur, cast_name)
-            time.sleep(1.2)
+    run_btn = st.button("✨ 4枚一括生成 (新規)")
 
-# --- 5. 表示と個別再生成 ---
-if any(st.session_state.generated_images):
-    st.subheader("🖼️ 生成結果")
-    rows = [st.columns(2), st.columns(2)]
-    placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
+# --- 5. 生成ロジックの実装 ---
+if run_btn and source_img:
+    # 1. 衣装アンカーの確定
+    if ref_img:
+        st.session_state.anchor_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
+        st.session_state.wardrobe_task = f"Strictly replicate the outfit in IMAGE 2. Specs: {cloth_detail}."
+    else:
+        with st.spinner("衣装デザインを固定中..."):
+            res = client.models.generate_content(model='gemini-3-pro-image-preview', contents=[f"A catalog photo of {cloth_main}, {cloth_detail}"])
+            if res.candidates:
+                st.session_state.anchor_part = types.Part.from_bytes(data=res.candidates[0].content.parts[0].inline_data.data, mime_type='image/png')
+                st.session_state.wardrobe_task = f"Use the design from IMAGE 2 as the absolute master. Specs: {cloth_detail}."
+            else:
+                st.error("アンカー生成に失敗しました。")
+                st.stop()
+
+    # 2. ポーズ選出
+    st.session_state.current_pose_paths = get_4_preset_poses(pose_pattern)
+    
+    # 3. 4枚一括生成（プログレス表示）
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
     identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
-    wardrobe_task = f"Replicate IMAGE 2 design exactly. Specs: {cloth_detail}."
+
+    for i, path in enumerate(st.session_state.current_pose_paths):
+        angle = path.split('_')[-1].split('.')[0]
+        status_text.text(f"生成中 ({i+1}/4): {angle} アングル...")
+        img = generate_image(client, path, identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, final_bg, enable_blur)
+        if img:
+            st.session_state.generated_images[i] = img
+        progress_bar.progress((i + 1) / 4)
+    
+    status_text.text("✅ 全アングルの生成が完了しました！")
+    time.sleep(1)
+    status_text.empty()
+    progress_bar.empty()
+
+# --- 6. 結果の表示エリア ---
+if any(st.session_state.generated_images):
+    st.subheader("🖼️ 生成結果")
+    cols = st.columns(2)
+    final_bg = bg_free_text.strip() if bg_free_text.strip() else BG_OPTIONS[selected_bg_label]
+    identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg') if source_img else None
 
     for i, img in enumerate(st.session_state.generated_images):
         if img:
-            with placeholders[i]:
+            with cols[i % 2]:
                 angle = st.session_state.current_pose_paths[i].split('_')[-1].split('.')[0]
                 st.image(img, caption=angle, use_container_width=True)
                 
-                # 個別ダウンロードボタン
-                buf = io.BytesIO(); img.save(buf, format="JPEG")
-                st.download_button(f"💾 {angle}を保存", buf.getvalue(), f"{cast_name}_{angle}.jpg", "image/jpeg", key=f"dl_{i}")
-                
-                # 個別再生成ボタン
-                if st.button(f"🔄 {angle}を撮り直し", key=f"redo_{i}"):
-                    with st.spinner(f"{angle}を再生成中..."):
-                        new_img = generate_image(client, i, st.session_state.current_pose_paths[i], identity_part, st.session_state.anchor_part, wardrobe_task, final_bg, enable_blur, cast_name)
-                        if new_img:
-                            st.session_state.generated_images[i] = new_img
-                            st.rerun()
+                # 保存・撮り直しボタン
+                c1, c2 = st.columns(2)
+                with c1:
+                    buf = io.BytesIO(); img.save(buf, format="JPEG")
+                    st.download_button(f"💾 保存", buf.getvalue(), f"{cast_name}_{angle}.jpg", "image/jpeg", key=f"dl_{i}")
+                with c2:
+                    if st.button(f"🔄 撮り直し", key=f"redo_{i}"):
+                        if identity_part:
+                            with st.spinner(f"{angle}を再生成中..."):
+                                new_img = generate_image(client, st.session_state.current_pose_paths[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, final_bg, enable_blur)
+                                if new_img:
+                                    st.session_state.generated_images[i] = new_img
+                                    st.rerun()
