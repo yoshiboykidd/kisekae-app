@@ -9,7 +9,35 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. ポーズ選出ロジック ---
+# --- 1. 背景カテゴリー設定 ---
+BG_DATA = {
+    "Luxury (高級感)": [
+        "Luxury hotel presidential suite with warm soft lighting",
+        "Grand marble lobby of a 5-star hotel with elegant chandeliers",
+        "Sophisticated dim-lit hotel lounge with leather sofas",
+        "Modern high-end wine cellar with golden ambient lighting"
+    ],
+    "City (都会的)": [
+        "Shimmering city night view of Tokyo with colorful bokeh lights",
+        "Brightly lit neon street in Ginza at night with soft lens flares",
+        "Chic open-air cafe terrace with warm fairy lights",
+        "Modern waterfront balcony overlooking a lit-up bridge"
+    ],
+    "Studio (清楚)": [
+        "Minimalist studio with elegant white curtains and airy atmosphere",
+        "Antique style studio with white brick walls and soft daylight",
+        "Abstract soft pink and white studio backdrop with professional lighting",
+        "Bright studio with light wood flooring and cozy minimalist furniture"
+    ],
+    "Mood (情緒)": [
+        "Luxury infinity pool at night with turquoise water reflections",
+        "Elegant Japanese garden with cherry blossoms at night (Yozakura)",
+        "Traditional Japanese room with tatami and soft paper lantern light",
+        "Serene autumn garden with red maple leaves and soft evening sun"
+    ]
+}
+
+# --- 2. ポーズ選出ロジック ---
 def get_4_preset_poses(pattern="立ち3:座り1"):
     base_path = "presets/poses"
     stand_dir = os.path.join(base_path, "standing")
@@ -64,7 +92,7 @@ def get_4_preset_poses(pattern="立ち3:座り1"):
 
     return [p for p in selected_paths if p is not None]
 
-# --- 2. 顔ブラー処理 ---
+# --- 3. 顔ブラー処理 ---
 def apply_face_blur(pil_image, blur_radius):
     cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -85,12 +113,12 @@ def apply_face_blur(pil_image, blur_radius):
     mask_blurred = mask.filter(ImageFilter.GaussianBlur(radius=blur_radius/2))
     return Image.composite(blurred_image, pil_image, mask_blurred)
 
-# --- 3. 認証機能 ---
+# --- 4. 認証機能 ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.12")
+        st.title("🔐 Karinto Group Image Tool ver 2.13")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -99,11 +127,11 @@ def check_password():
         return False
     return True
 
-# --- 4. メインアプリ ---
+# --- 5. メインアプリ ---
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.12")
+    st.title("📸 AI KISEKAE Manager ver 2.13")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -115,9 +143,11 @@ if check_password():
         st.divider()
         cloth_main = st.selectbox("ベース衣装カテゴリー", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
         cloth_detail = st.text_input("衣装補足指示", placeholder="例：黒サテン、フリル付き")
-        bg = st.selectbox("背景", ["高級ホテル", "夜の繁華街", "撮影スタジオ", "ビーチ"])
-        pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         
+        # 背景カテゴリー選択
+        bg_category = st.selectbox("背景カテゴリー (毎回ランダム抽選)", list(BG_DATA.keys()))
+        
+        pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=False)
         blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable_blur else "中"
         
@@ -130,12 +160,15 @@ if check_password():
             st.subheader("🖼️ 生成結果")
             rows = [st.columns(2), st.columns(2)]
             placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
+            
+            # --- 実行時に「特定の1箇所」をカテゴリーから抽選 ---
+            selected_bg = random.choice(BG_DATA[bg_category])
+            session_id = random.randint(10000, 99999)
+            
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
             style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
             blur_radius_map = {"弱": 15, "中": 30, "強": 60}
             current_blur_radius = blur_radius_map[blur_strength]
-
-            session_id = random.randint(10000, 99999)
 
             for i, path in enumerate(pose_paths):
                 angle_label = path.split('_')[-1].split('.')[0]
@@ -149,24 +182,21 @@ if check_password():
                             if style_part: contents.append(style_part)
                             contents.append(pose_part)
 
-                            # --- プロンプト掟強化 (ver 2.12: ボケ感の追加) ---
-                            wardrobe_instruction = ""
+                            # 衣装指示
                             if style_part:
-                                wardrobe_instruction = (
-                                    f"WARDROBE: Wear the EXACT SAME outfit from IMAGE 2 across all shots. Consistent design and fabric."
-                                )
+                                wardrobe_instruction = f"WARDROBE: Wear the EXACT SAME outfit from IMAGE 2 across all shots."
                             else:
-                                wardrobe_instruction = (
-                                    f"WARDROBE: FIXED design for this session ({session_id}). High-quality {cloth_main}, details: {cloth_detail}."
-                                )
+                                wardrobe_instruction = f"WARDROBE: FIXED design session ({session_id}). High-quality {cloth_main}, details: {cloth_detail}."
 
+                            # プロンプト (背景は固定された selected_bg を使用)
                             prompt = (
-                                f"STRICT MANDATE: GENERATE ONE SINGLE PHOTOGRAPH ONLY. NO COLLAGE.\n"
-                                f"STYLE: High-end professional portrait photography. Shallow depth of field. Beautifully blurred background (bokeh).\n"
-                                f"1. IDENTITY (IMAGE 1): Use 100% of the woman's actual face and physical build from IMAGE 1. IMAGE 3 is just a joint guide.\n"
+                                f"STRICT MANDATE: GENERATE ONE SINGLE VERTICAL PHOTOGRAPH ONLY. NO COLLAGE.\n"
+                                f"STYLE: High-end professional portrait. Shallow depth of field. 85mm f/1.8 bokeh.\n"
+                                f"1. IDENTITY (IMAGE 1): Use 100% of the woman's face and PHYSICAL BUILD from IMAGE 1. IMAGE 3 is just a joint guide.\n"
                                 f"2. {wardrobe_instruction}\n"
-                                f"3. POSE (IMAGE 3): Apply '{angle_label}' pose. One person in frame.\n"
-                                f"4. QUALITY: 8k photorealistic, 85mm f/1.8 lens, {bg}, Japanese woman, lips sealed."
+                                f"3. BACKGROUND: {selected_bg}. Must be consistent throughout the set.\n"
+                                f"4. POSE (IMAGE 3): Apply '{angle_label}' pose. One person in frame.\n"
+                                f"5. QUALITY: 8k photorealistic, Japanese woman, lips sealed."
                             )
 
                             response = client.models.generate_content(
@@ -186,6 +216,6 @@ if check_password():
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
-                            else: st.error("AI判定により画像が生成されませんでした。")
+                            else: st.error("AI判定スキップ")
                         except Exception as e: st.error(f"エラー: {e}")
                         time.sleep(2.0)
