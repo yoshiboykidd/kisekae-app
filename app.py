@@ -110,7 +110,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if not st.session_state["password_correct"]:
-        st.title("🔐 Karinto Group Image Tool ver 2.17")
+        st.title("🔐 Karinto Group Image Tool ver 2.18")
         pwd = st.text_input("合言葉", type="password")
         if st.button("ログイン"):
             if pwd == "karin10": 
@@ -123,7 +123,7 @@ def check_password():
 if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    st.title("📸 AI KISEKAE Manager ver 2.17")
+    st.title("📸 AI KISEKAE Manager ver 2.18")
 
     with st.sidebar:
         st.subheader("👤 写真アップロード")
@@ -155,13 +155,11 @@ if check_password():
             # --- フェーズ1: 衣装アンカーの確定 ---
             anchor_style_part = None
             if ref_img:
-                # ユーザーアップロードの画像を使用
                 anchor_style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
             else:
-                # 画像がない場合、AIがアンカー画像を生成
                 with st.spinner("服装のデザインを確定中 (アンカー生成)..."):
                     try:
-                        anchor_prompt = f"A flat lay photograph of a {cloth_main}. Details: {cloth_detail}. Isolated on white background. Clear view of fabric and design."
+                        anchor_prompt = f"A high-quality studio catalog photograph of a {cloth_main}. Details: {cloth_detail}. Clear front view, high detail fabric."
                         anchor_response = client.models.generate_content(
                             model='gemini-3-pro-image-preview',
                             contents=[anchor_prompt],
@@ -170,13 +168,8 @@ if check_password():
                         if anchor_response.candidates and anchor_response.candidates[0].content.parts:
                             anchor_img_data = anchor_response.candidates[0].content.parts[0].inline_data.data
                             anchor_style_part = types.Part.from_bytes(data=anchor_img_data, mime_type='image/png')
-                            # st.image(Image.open(io.BytesIO(anchor_img_data)), caption="生成された衣装アンカー", width=200) # デバッグ用表示
-                        else:
-                            st.error("衣装アンカーの生成に失敗しました。")
-                            st.stop()
-                    except Exception as e:
-                        st.error(f"衣装アンカー生成エラー: {e}")
-                        st.stop()
+                        else: st.error("アンカー生成失敗"); st.stop()
+                    except Exception as e: st.error(f"エラー: {e}"); st.stop()
 
             # --- フェーズ2: 4ポーズの生成 ---
             st.subheader("🖼️ 生成結果")
@@ -200,17 +193,16 @@ if check_password():
                             with open(path, "rb") as f:
                                 pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
                             
-                            # アンカー画像をIMAGE 2として使用
                             contents = [identity_part, anchor_style_part, pose_part]
 
+                            # --- プロンプト掟強化 (ver 2.18: 体型ロックの極大化) ---
                             prompt = (
-                                f"STRICT MANDATE: GENERATE ONE SINGLE VERTICAL PHOTOGRAPH ONLY. NO COLLAGE.\n"
-                                f"STYLE: High-end professional portrait. Shallow depth of field. 85mm f/1.8 bokeh background.\n"
-                                f"1. IDENTITY (IMAGE 1): Use 100% of the woman's face and PHYSICAL BUILD from IMAGE 1. IMAGE 3 is just a joint guide.\n"
-                                f"2. WARDROBE ANCHOR (IMAGE 2): The woman MUST wear the EXACT SAME outfit shown in IMAGE 2. Replicate its design, color, and fabric 100%.\n"
-                                f"3. BACKGROUND: {final_bg_prompt}.\n"
-                                f"4. POSE (IMAGE 3): Apply '{angle_label}' pose. One person in frame.\n"
-                                f"5. QUALITY: 8k photorealistic, Japanese woman, lips sealed."
+                                f"STRICT MANDATE: GENERATE ONE SINGLE PERSON ONLY.\n"
+                                f"1. BODY ANCHOR (IMAGE 1): Use 100% of the woman's actual body mass, weight, shoulder width, and curves from IMAGE 1. "
+                                f"Discard the mannequin's proportions in IMAGE 3 entirely. IMAGE 3 is an empty wireframe with NO FLESH.\n"
+                                f"2. WARDROBE (IMAGE 2): Wrap the EXACT outfit from IMAGE 2 around the body from IMAGE 1. Identical design/fabric.\n"
+                                f"3. POSE (IMAGE 3): Use joint coordinates ONLY for the '{angle_label}' pose. Maintain natural human posture.\n"
+                                f"4. OUTPUT: 8k photorealistic, shallow depth of field, {final_bg_prompt}, lips sealed."
                             )
 
                             response = client.models.generate_content(
@@ -230,6 +222,5 @@ if check_password():
                                 st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
                                 buf = io.BytesIO(); final_img.save(buf, format="JPEG")
                                 st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
-                            else: st.error("AI判定により画像が生成されませんでした。")
                         except Exception as e: st.error(f"エラー: {e}")
                         time.sleep(2.0)
