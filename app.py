@@ -9,7 +9,7 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. セッション初期化 ---
+# --- 1. セッション初期化 (変更なし) ---
 if "generated_images" not in st.session_state:
     st.session_state.generated_images = [None] * 4
 if "current_pose_paths" not in st.session_state:
@@ -93,19 +93,18 @@ def generate_image(client, path, identity_part, anchor_part, wardrobe_task, bg_p
 # --- 3. 認証 ---
 if "password_correct" not in st.session_state: st.session_state.password_correct = False
 if not st.session_state.password_correct:
-    st.title("🔐 Login ver 2.27")
+    st.title("🔐 Login ver 2.28")
     if st.text_input("合言葉", type="password") == "karin10" and st.button("ログイン"):
         st.session_state.password_correct = True; st.rerun()
     st.stop()
 
 # --- 4. メインUI ---
-st.title("📸 AI KISEKAE Manager ver 2.27")
+st.title("📸 AI KISEKAE Manager ver 2.28")
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 with st.sidebar:
     cast_name = st.text_input("👤 キャスト名", "cast")
     
-    # 修正：プレビュー表示を確実にするためのロジック
     source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
     if source_img:
         st.image(source_img, caption="キャスト写真 プレビュー", use_container_width=True)
@@ -131,6 +130,11 @@ with st.sidebar:
 
 # --- 5. 生成ロジック ---
 if run_btn and source_img:
+    # 重要：新規生成時は前回のデータをすべてクリアする
+    st.session_state.generated_images = [None] * 4
+    st.session_state.anchor_part = None
+    st.session_state.current_pose_paths = []
+
     time_mods = {
         "昼 (Daylight)": "bright natural daylight, soft sunbeams",
         "夕方 (Golden Hour)": "warm sunset lighting, golden hour glow",
@@ -169,6 +173,7 @@ if run_btn and source_img:
             st.session_state.generated_images[i] = img
         progress_bar.progress((i + 1) / 4)
     progress_bar.empty()
+    st.rerun() # 画面を強制リフレッシュして確実に表示を更新
 
 # --- 6. 結果表示 ---
 if any(st.session_state.generated_images):
@@ -179,7 +184,12 @@ if any(st.session_state.generated_images):
     for i, img in enumerate(st.session_state.generated_images):
         if img:
             with cols[i % 2]:
-                angle = st.session_state.current_pose_paths[i].split('_')[-1].split('.')[0]
+                # パスが正しく存在するか確認
+                if i < len(st.session_state.current_pose_paths):
+                    angle = st.session_state.current_pose_paths[i].split('_')[-1].split('.')[0]
+                else:
+                    angle = "Photo"
+                    
                 st.image(img, caption=angle, use_container_width=True)
                 c1, c2 = st.columns(2)
                 with c1:
