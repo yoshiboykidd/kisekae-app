@@ -144,4 +144,92 @@ if check_password():
         st.divider()
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         enable_blur = st.checkbox("🛡️ 楕円顔ブラーを自動適用", value=False)
-        blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable
+        blur_strength = st.select_slider("ブラー強度", options=["弱", "中", "強"], value="中") if enable_blur else "中"
+        
+        st.divider()
+        run_button = st.button("✨ 掟を遵守して4枚一括生成")
+
+    if run_button and source_img:
+        pose_paths = get_4_preset_poses(pose_pattern)
+        if pose_paths:
+            # --- フェーズ1: 衣装アンカーの確定 ---
+            anchor_style_part = None
+            if ref_img:
+                # ユーザーアップロードの画像を使用
+                anchor_style_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
+            else:
+                # 画像がない場合、AIがアンカー画像を生成
+                with st.spinner("服装のデザインを確定中 (アンカー生成)..."):
+                    try:
+                        anchor_prompt = f"A flat lay photograph of a {cloth_main}. Details: {cloth_detail}. Isolated on white background. Clear view of fabric and design."
+                        anchor_response = client.models.generate_content(
+                            model='gemini-3-pro-image-preview',
+                            contents=[anchor_prompt],
+                            config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="1:1"))
+                        )
+                        if anchor_response.candidates and anchor_response.candidates[0].content.parts:
+                            anchor_img_data = anchor_response.candidates[0].content.parts[0].inline_data.data
+                            anchor_style_part = types.Part.from_bytes(data=anchor_img_data, mime_type='image/png')
+                            # st.image(Image.open(io.BytesIO(anchor_img_data)), caption="生成された衣装アンカー", width=200) # デバッグ用表示
+                        else:
+                            st.error("衣装アンカーの生成に失敗しました。")
+                            st.stop()
+                    except Exception as e:
+                        st.error(f"衣装アンカー生成エラー: {e}")
+                        st.stop()
+
+            # --- フェーズ2: 4ポーズの生成 ---
+            st.subheader("🖼️ 生成結果")
+            rows = [st.columns(2), st.columns(2)]
+            placeholders = [rows[0][0], rows[0][1], rows[1][0], rows[1][1]]
+            
+            if bg_free_text.strip():
+                final_bg_prompt = f"{bg_free_text.strip()}, high-end portrait bokeh background"
+            else:
+                final_bg_prompt = BG_OPTIONS[selected_bg_label]
+            
+            identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
+            blur_radius_map = {"弱": 15, "中": 30, "強": 60}
+            current_blur_radius = blur_radius_map[blur_strength]
+
+            for i, path in enumerate(pose_paths):
+                angle_label = path.split('_')[-1].split('.')[0]
+                with placeholders[i]:
+                    with st.spinner(f"{angle_label}生成中..."):
+                        try:
+                            with open(path, "rb") as f:
+                                pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
+                            
+                            # アンカー画像をIMAGE 2として使用
+                            contents = [identity_part, anchor_style_part, pose_part]
+
+                            prompt = (
+                                f"STRICT MANDATE: GENERATE ONE SINGLE VERTICAL PHOTOGRAPH ONLY. NO COLLAGE.\n"
+                                f"STYLE: High-end professional portrait. Shallow depth of field. 85mm f/1.8 bokeh background.\n"
+                                f"1. IDENTITY (IMAGE 1): Use 100% of the woman's face and PHYSICAL BUILD from IMAGE 1. IMAGE 3 is just a joint guide.\n"
+                                f"2. WARDROBE ANCHOR (IMAGE 2): The woman MUST wear the EXACT SAME outfit shown in IMAGE 2. Replicate its design, color, and fabric 100%.\n"
+                                f"3. BACKGROUND: {final_bg_prompt}.\n"
+                                f"4. POSE (IMAGE 3): Apply '{angle_label}' pose. One person in frame.\n"
+                                f"5. QUALITY: 8k photorealistic, Japanese woman, lips sealed."
+                            )
+
+                            response = client.models.generate_content(
+                                model='gemini-3-pro-image-preview',
+                                contents=contents + [prompt],
+                                config=types.GenerateContentConfig(
+                                    response_modalities=['IMAGE'],
+                                    safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
+                                    image_config=types.ImageConfig(aspect_ratio="2:3")
+                                )
+                            )
+
+                            if response.candidates and response.candidates[0].content.parts:
+                                img_data = response.candidates[0].content.parts[0].inline_data.data
+                                raw_img = Image.open(io.BytesIO(img_data)).resize((600, 900))
+                                final_img = apply_face_blur(raw_img, current_blur_radius) if enable_blur else raw_img
+                                st.image(final_img, caption=f"View: {angle_label}", use_container_width=True)
+                                buf = io.BytesIO(); final_img.save(buf, format="JPEG")
+                                st.download_button(label=f"保存 {i+1}", data=buf.getvalue(), key=f"dl_{i}")
+                            else: st.error("AI判定により画像が生成されませんでした。")
+                        except Exception as e: st.error(f"エラー: {e}")
+                        time.sleep(2.0)
