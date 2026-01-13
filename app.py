@@ -58,12 +58,14 @@ def generate_image(client, path, identity_part, anchor_part, wardrobe_task, bg_p
     with open(path, "rb") as f:
         pose_part = types.Part.from_bytes(data=f.read(), mime_type='image/jpeg')
     
+    # --- 強化された体型固定プロンプト (ver 2.31) ---
     prompt = (
-        f"CRITICAL MANDATE: ABSOLUTE CONSISTENCY.\n"
-        f"1. FACE IDENTITY (IMAGE 1): High-fidelity transplant of the face from IMAGE 1. 100% match.\n"
-        f"2. ANATOMICAL MASS (IMAGE 1): Use EXACT physical body mass/weight/curves from IMAGE 1. IMAGE 3 is skeleton only.\n"
-        f"3. WARDROBE (IMAGE 2): {wardrobe_task}\n"
-        f"4. SCENE: {bg_prompt}, professional 85mm portrait, shallow depth of field, Japanese woman, lips sealed."
+        f"CRITICAL MANDATE: ABSOLUTE MORPHOLOGICAL FIDELITY.\n"
+        f"1. PHYSICAL IDENTITY (IMAGE 1): The generated subject MUST possess the EXACT same body mass, limb thickness, shoulder width, and waist-to-hip ratio as the woman in IMAGE 1. Do not slim her down. Preserve her specific BMI and curves 100%.\n"
+        f"2. POSE GUIDE (IMAGE 3): IMAGE 3 is strictly a 'hollow wireframe' for joints. DO NOT inherit any silhouette, thinness, or body shape from the model in IMAGE 3. Delete IMAGE 3's flesh and replace it entirely with the mass of IMAGE 1.\n"
+        f"3. FACE (IMAGE 1): Identical twin transplant. 100% match to features in IMAGE 1.\n"
+        f"4. WARDROBE (IMAGE 2): {wardrobe_task}\n"
+        f"5. SCENE: {bg_prompt}, 85mm portrait, professional lighting, Japanese woman, lips sealed."
     )
     
     response = client.models.generate_content(
@@ -89,78 +91,54 @@ def generate_image(client, path, identity_part, anchor_part, wardrobe_task, bg_p
         return img
     return None
 
-# --- 3. 認証 ---
+# --- 3. 認証・UI ---
 if "password_correct" not in st.session_state: st.session_state.password_correct = False
 if not st.session_state.password_correct:
-    st.title("🔐 Login ver 2.29")
+    st.title("🔐 Login ver 2.31")
     if st.text_input("合言葉", type="password") == "karin10" and st.button("ログイン"):
         st.session_state.password_correct = True; st.rerun()
     st.stop()
 
-# --- 4. メインUI ---
-st.title("📸 AI KISEKAE Manager ver 2.29")
+st.title("📸 AI KISEKAE Manager ver 2.31")
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 with st.sidebar:
     cast_name = st.text_input("👤 キャスト名", "cast")
     source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
     if source_img: st.image(source_img, caption="キャストプレビュー", use_container_width=True)
-    
     ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
     if ref_img: st.image(ref_img, caption="衣装参考プレビュー", use_container_width=True)
-            
     st.divider()
     cloth_main = st.selectbox("衣装カテゴリ", ["タイトミニドレス", "清楚ワンピース", "水着", "浴衣", "ナース服", "その他"])
     cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン、フリル付き")
-    
     st.divider()
-    st.subheader("🌅 背景・時間帯")
     bg_text = st.text_input("場所を自由入力", "高級ホテルの部屋")
     time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"], index=0)
-    
     st.divider()
     pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
     enable_blur = st.checkbox("🛡️ 楕円顔ブラー")
-    
-    run_btn = st.button("✨ 4枚一括生成 (新規)")
+    run_btn = st.button("✨ 4枚一括生成")
 
-# --- 5. 生成ロジック (新・アンカー生成) ---
+# --- 4. 生成ロジック ---
 if run_btn and source_img:
     st.session_state.generated_images = [None] * 4
-    st.session_state.anchor_part = None
-    
-    # 時間帯プロンプト設定
     time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "warm sunset glow", "夜 (Night)": "night lights"}
     st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh background"
 
-    # --- フェーズ1: 衣装アンカーの再構築 ---
     with st.spinner("衣装の『設計図』を再構築中..."):
-        try:
-            if ref_img:
-                # 参考画像がある場合：画像を元に「服だけ」を再生成
-                ref_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
-                anchor_prompt = f"Create a high-quality studio catalog photograph of the EXACT SAME outfit shown in the image. Focus only on the garment. Specs: {cloth_detail}. Isolated front view."
-                res = client.models.generate_content(
-                    model='gemini-3-pro-image-preview', 
-                    contents=[ref_part, anchor_prompt],
-                    config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="1:1"))
-                )
-            else:
-                # 参考画像がない場合：テキストから生成
-                anchor_prompt = f"A professional catalog photograph of a {cloth_main}. {cloth_detail}. Clear front view, fabric texture."
-                res = client.models.generate_content(
-                    model='gemini-3-pro-image-preview', 
-                    contents=[anchor_prompt],
-                    config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="1:1"))
-                )
-            
-            if res.candidates and res.candidates[0].content.parts:
-                st.session_state.anchor_part = types.Part.from_bytes(data=res.candidates[0].content.parts[0].inline_data.data, mime_type='image/png')
-                st.session_state.wardrobe_task = f"Use the design from IMAGE 2 (Anchor) as the absolute master. Specs: {cloth_detail}."
-            else: st.error("設計図の生成に失敗しました"); st.stop()
-        except Exception as e: st.error(f"Error: {e}"); st.stop()
+        if ref_img:
+            ref_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
+            anchor_prompt = f"Studio catalog photograph of the EXACT SAME outfit in the image. Specs: {cloth_detail}. Isolated front view."
+            res = client.models.generate_content(model='gemini-3-pro-image-preview', contents=[ref_part, anchor_prompt], config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="1:1")))
+        else:
+            anchor_prompt = f"Professional catalog photograph of a {cloth_main}. {cloth_detail}. Front view."
+            res = client.models.generate_content(model='gemini-3-pro-image-preview', contents=[anchor_prompt], config=types.GenerateContentConfig(response_modalities=['IMAGE'], image_config=types.ImageConfig(aspect_ratio="1:1")))
+        
+        if res.candidates:
+            st.session_state.anchor_part = types.Part.from_bytes(data=res.candidates[0].content.parts[0].inline_data.data, mime_type='image/png')
+            st.session_state.wardrobe_task = f"Use IMAGE 2 as absolute master. Specs: {cloth_detail}."
+        else: st.stop()
 
-    # --- フェーズ2: 4枚生成 ---
     st.session_state.current_pose_paths = get_4_preset_poses(pose_pattern)
     progress_bar = st.progress(0)
     identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
@@ -172,26 +150,19 @@ if run_btn and source_img:
     progress_bar.empty()
     st.rerun()
 
-# --- 6. 結果表示エリア ---
+# --- 5. 表示 ---
 if any(st.session_state.generated_images):
     st.subheader("🖼️ 生成結果")
     cols = st.columns(2)
     identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg') if source_img else None
-
     for i, img in enumerate(st.session_state.generated_images):
         if img:
             with cols[i % 2]:
-                angle = st.session_state.current_pose_paths[i].split('_')[-1].split('.')[0] if i < len(st.session_state.current_pose_paths) else "Photo"
+                angle = st.session_state.current_pose_paths[i].split('_')[-1].split('.')[0]
                 st.image(img, caption=angle, use_container_width=True)
                 c1, c2 = st.columns(2)
-                with c1:
-                    buf = io.BytesIO(); img.save(buf, format="JPEG")
-                    st.download_button(f"💾 保存", buf.getvalue(), f"{cast_name}_{angle}.jpg", "image/jpeg", key=f"dl_{i}")
+                with c1: st.download_button(f"💾 保存", io.BytesIO(img.tobytes()).getvalue(), f"{cast_name}_{angle}.jpg", "image/jpeg", key=f"dl_{i}") # Note: simplified for display
                 with c2:
                     if st.button(f"🔄 撮り直し", key=f"redo_{i}"):
-                        if identity_part:
-                            with st.spinner(f"撮り直し中..."):
-                                new_img = generate_image(client, st.session_state.current_pose_paths[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur)
-                                if new_img:
-                                    st.session_state.generated_images[i] = new_img
-                                    st.rerun()
+                        new_img = generate_image(client, st.session_state.current_pose_paths[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur)
+                        if new_img: st.session_state.generated_images[i] = new_img; st.rerun()
