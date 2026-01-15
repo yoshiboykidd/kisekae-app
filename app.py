@@ -145,4 +145,54 @@ if run_btn and source_img:
     if pose_pattern == "立ち3:座り1":
         poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
     else:
-        poses = random.sample(STAND_PRO
+        poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
+    random.shuffle(poses)
+    st.session_state.current_pose_texts = poses
+
+    with st.spinner("衣装の設計図（アンカー）を構築中..."):
+        cat_en = CATEGORIES[cloth_main]
+        if ref_img:
+            ref_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
+            anchor_prompt = f"Studio catalog photo of the EXACT SAME {cat_en}. Specs: {cloth_detail}. Isolated view."
+            res_data = generate_with_retry(client, [ref_part], anchor_prompt)
+        else:
+            anchor_prompt = f"Professional catalog photo of {cat_en}. {cloth_detail}."
+            res_data = generate_with_retry(client, [], anchor_prompt)
+        
+        if isinstance(res_data, bytes):
+            st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
+            st.session_state.wardrobe_task = f"Replicate IMAGE 2 exactly. Specs: {cloth_detail}."
+        else:
+            st.error(f"アンカー生成失敗: {res_data}"); st.stop()
+
+    p_bar = st.progress(0)
+    for i, p_txt in enumerate(st.session_state.current_pose_texts):
+        img_res = generate_image_by_text(client, p_txt, identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur)
+        if isinstance(img_res, Image.Image): st.session_state.generated_images[i] = img_res
+        else: st.session_state.error_log.append(f"{i+1}枚目: {img_res}")
+        p_bar.progress((i + 1) / 4); time.sleep(1)
+    st.rerun()
+
+# --- 5. 表示エリア ---
+if st.session_state.error_log:
+    for err in st.session_state.error_log: st.warning(err)
+
+if any(st.session_state.generated_images):
+    st.subheader(f"🖼️ 生成結果 (ver {VERSION})")
+    cols = st.columns(2)
+    for i, img in enumerate(st.session_state.generated_images):
+        if img:
+            with cols[i % 2]:
+                st.image(img, use_container_width=True)
+                c1, c2 = st.columns(2)
+                with c1:
+                    buf = io.BytesIO(); img.save(buf, format="JPEG")
+                    st.download_button("💾 保存", buf.getvalue(), f"img_{i}.jpg", "image/jpeg", key=f"dl_{i}")
+                with c2:
+                    if st.button(f"🔄 撮り直し #{i}", key=f"re_{i}"):
+                        if identity_part and st.session_state.anchor_part:
+                            with st.spinner("再生成中..."):
+                                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur)
+                                if isinstance(res, Image.Image):
+                                    st.session_state.generated_images[i] = res; st.rerun()
+                                else: st.error(f"再生成失敗: {res}")
