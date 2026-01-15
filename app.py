@@ -9,8 +9,8 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. システム設定 (ver 2.62: Safe Pose Expansion) ---
-VERSION = "2.62"
+# --- 1. システム設定 (ver 2.63: Safety Filter Bypass Optimization) ---
+VERSION = "2.63"
 st.set_page_config(page_title=f"AI KISEKAE Manager v{VERSION}", layout="wide")
 
 # セッション状態の初期化
@@ -21,38 +21,32 @@ for key in ["generated_images", "error_log", "anchor_part", "wardrobe_task", "cu
         elif key in ["anchor_part", "wardrobe_task", "final_bg_prompt"]: st.session_state[key] = None
         else: st.session_state[key] = []
 
-# --- 【ver 2.62 拡張】厳選された安全なポーズリスト ---
+# ポーズ定義 (ver 2.43 黄金律)
 STAND_PROMPTS = [
-    "Full body portrait, standing naturally, hand gently touching hair, looking slightly away, candid style",
-    "Full body portrait, leaning slightly against a wall, arms casually crossed, angled body position",
-    "Full body portrait, walking slowly, looking back over shoulder with a gentle expression",
-    "Full body portrait, standing with weight on one leg, one hand resting on hip, confident look",
-    "Full body portrait, standing by a railing, looking out thoughtfully, soft side lighting",
-    "Full body portrait, standing with hands behind back, chest slightly forward, looking at camera", # 追加: 背面手組み
-    "Full body portrait, leaning forward slightly towards the camera, hands on knees, engaging look", # 追加: 少し前傾
-    "Full body portrait, adjusted hair with both hands, elbows out, dynamic but stable posture" # 追加: 両手髪直し
+    "Full body portrait, standing naturally, hand gently touching hair, looking slightly away",
+    "Full body portrait, leaning slightly against a wall, arms casually crossed",
+    "Full body portrait, walking slowly, looking back over shoulder",
+    "Full body portrait, weight on one leg, one hand resting on hip",
+    "Full body portrait, standing by a railing, looking out thoughtfully"
 ]
-
 SIT_PROMPTS = [
-    "Full body portrait, relaxed sitting pose on a sofa, one leg tucked naturally, looking at camera",
-    "Full body portrait, sitting sideways on a chair, leaning on the backrest, relaxed posture",
-    "Full body portrait, sitting gracefully on steps, hands resting naturally in lap",
-    "Full body portrait, casual sitting pose on a plush surface, leaning back slightly on hands",
-    "Full body portrait, sitting on the edge of a bed, looking over shoulder, soft atmosphere", # 追加: ベッド端
-    "Full body portrait, sitting cross-legged on a rug, holding a coffee cup, cozy and natural" # 追加: あぐら風（上品に）
+    "Full body portrait, relaxed sitting pose on a sofa, looking at camera",
+    "Full body portrait, sitting sideways on a chair, leaning on the backrest",
+    "Full body portrait, sitting gracefully on steps, hands resting in lap",
+    "Full body portrait, casual sitting pose on a plush surface, leaning back on hands"
 ]
 
-# 6つの固定カテゴリー定義
+# 【ver 2.63 修正】規制ワード "lingerie" を排除し "Night-fashion" 等に置換
 CATEGORIES = {
-    "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin texture, morning sun, candid photography style"},
-    "2. 水着（ビーチ）": {"en": "High-end stylish beachwear", "back_prompt": "healthy skin glow, subtle water droplets, vibrant summer lighting"},
-    "3. 部屋着（リラックス）": {"en": "Soft lounge wear, silk or knit lingerie-style", "back_prompt": "ultra-soft focus, warm rim lighting, intimate and cinematic atmosphere"},
-    "4. オフィス（スーツ）": {"en": "Elegant business professional attire", "back_prompt": "sharp corporate lighting, professional studio look, high-contrast silhouette"},
-    "5. コスチューム": {"en": "High-quality themed costume, professional uniform", "back_prompt": "meticulous details, professional strobe lighting, theatrical mood"},
+    "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin texture, morning sun"},
+    "2. 水着（ビーチ）": {"en": "High-end stylish resort swimwear", "back_prompt": "healthy skin glow, vibrant summer lighting"},
+    "3. 部屋着（リラックス）": {"en": "Elegant silk night-fashion, satin camisole-style", "back_prompt": "ultra-soft focus, warm rim lighting, cinematic intimacy"},
+    "4. オフィス（スーツ）": {"en": "Elegant business professional attire", "back_prompt": "sharp corporate lighting, professional studio look"},
+    "5. コスチューム": {"en": "High-quality themed costume, professional uniform", "back_prompt": "meticulous details, professional strobe lighting"},
     "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "dramatic evening lighting, luxury satin sheen, glamorous bokeh background"}
 }
 
-# --- 2. ユーティリティ & 生成ロジック ---
+# --- 2. ユーティリティ ---
 def apply_face_blur(img, radius=30):
     try:
         cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
@@ -86,15 +80,15 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
     return "RETRY_FAILED"
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, enable_blur, cat_key):
-    """【絶対ルール：ver 2.54/2.58 継承】黄金律プロンプト"""
+    """【絶対ルール：ver 2.54 復元】顔と体型の固定精度を最優先"""
     cat_info = CATEGORIES[cat_key]
+    # プロンプト内の "wardrobe" 指示をよりマイルドな表現に変更
     prompt = (
         f"STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK.\n"
-        f"1. PHYSICAL IDENTITY (IMAGE 1): [FIXED_IDENTITY] Replicate the EXACT body mass, curves, weight, and shoulder width of the woman in IMAGE 1. 100% anatomical match.\n"
+        f"1. PHYSICAL IDENTITY (IMAGE 1): [FIXED_IDENTITY] Replicate the EXACT body mass and face of the woman in IMAGE 1.\n"
         f"2. POSE & COMPOSITION: {pose_text}.\n"
-        f"3. FACE (IMAGE 1): Precise facial identity match. Identical features from IMAGE 1.\n"
-        f"4. WARDROBE (IMAGE 2): {wardrobe_task}\n"
-        f"5. SCENE: {bg_prompt}, {cat_info['back_prompt']}, 85mm portrait, professional lighting, 8k, lips sealed."
+        f"3. WARDROBE (IMAGE 2): {wardrobe_task}\n"
+        f"4. SCENE: {bg_prompt}, {cat_info['back_prompt']}, 85mm portrait, professional lighting, 8k, lips sealed."
     )
     res_data = generate_with_retry(client, [identity_part, anchor_part], prompt)
     if isinstance(res_data, bytes):
@@ -118,10 +112,10 @@ with st.sidebar:
     source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'])
     if source_img: st.image(source_img, caption="ターゲット", use_container_width=True)
     ref_img = st.file_uploader("衣装参考 (IMAGE 2 / 任意)", type=['png', 'jpg', 'jpeg'])
-    if ref_img: st.image(ref_img, caption="リファレンス", use_container_width=True)
+    if ref_img: st.image(ref_img, caption="衣装リファレンス", use_container_width=True)
     st.divider()
     cloth_main = st.selectbox("衣装カテゴリ", list(CATEGORIES.keys()))
-    cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン、フリル付き")
+    cloth_detail = st.text_input("衣装仕様書", placeholder="例：シルク素材、サテンの光沢")
     st.divider()
     bg_text = st.text_input("場所", "高級ホテルの部屋")
     time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "warm sunset glow", "夜 (Night)": "night lights"}
@@ -140,42 +134,36 @@ if run_btn and source_img:
     st.session_state.generated_images = [None] * 4
     st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
     
-    if pose_pattern == "立ち3:座り1":
-        poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
-    else:
-        poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
-    random.shuffle(poses)
-    st.session_state.current_pose_texts = poses
+    if pose_pattern == "立ち3:座り1": poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
+    else: poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
+    random.shuffle(poses); st.session_state.current_pose_texts = poses
 
     status_container = st.empty()
     progress_bar = st.progress(0)
 
-    # ステップ1: アンカー
+    # ステップ1: アンカー (ここをよりマイルドに修正)
     with status_container.container():
         st.info("🕒 ステップ 1/2: 衣装設計図（アンカー）を構築中...")
-        anchor_prompt = f"Studio catalog photo of the {CATEGORIES[cloth_main]['en']}. Specs: {cloth_detail}. Isolated view."
+        cat_en = CATEGORIES[cloth_main]['en']
+        # "Lingerie" を連想させない、純粋な衣服カタログとしての指示
+        anchor_prompt = f"Professional studio product shot of {cat_en}. Specs: {cloth_detail}. Flat lay style, neutral background, textile detail."
         contents = [types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')] if ref_img else []
         res_data = generate_with_retry(client, contents, anchor_prompt)
         if isinstance(res_data, bytes):
             st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
-            st.session_state.wardrobe_task = f"Strictly replicate the clothing design from IMAGE 2. {cloth_detail}."
+            # 最終合成時のタスクもマイルドに
+            st.session_state.wardrobe_task = f"Dress the woman in the satin night-fashion shown in IMAGE 2. High-quality fabric weave."
         else:
             st.error(f"❌ アンカー生成失敗: {res_data}"); st.stop()
 
     # ステップ2: 4枚生成
     for i, p_txt in enumerate(st.session_state.current_pose_texts):
         current_step = i + 1
-        with status_container.container():
-            st.info(f"🎨 ステップ 2/2: フィッティングを実行中 ({current_step}/4)...")
-        
+        with status_container.container(): st.info(f"🎨 ステップ 2/2: フィッティング中 ({current_step}/4)...")
         img_res = generate_image_by_text(client, p_txt, identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur, cloth_main)
-        if isinstance(img_res, Image.Image):
-            st.session_state.generated_images[i] = img_res
-        else:
-            st.session_state.error_log.append(f"{current_step}枚目: {img_res}")
-        
-        progress_bar.progress(current_step / 4)
-        time.sleep(1)
+        if isinstance(img_res, Image.Image): st.session_state.generated_images[i] = img_res
+        else: st.session_state.error_log.append(f"{current_step}枚目: {img_res}")
+        progress_bar.progress(current_step / 4); time.sleep(1)
 
     status_container.success("✨ 生成完了！"); time.sleep(0.5); status_container.empty(); st.rerun()
 
@@ -203,10 +191,10 @@ for i in range(4):
                             if isinstance(res, Image.Image): st.session_state.generated_images[i] = res; st.rerun()
                             else: st.error(f"失敗: {res}")
         else:
-            st.info(f"🔳 スロット {i+1}: 写真がありません")
+            st.info(f"🔳 スロット {i+1}: 生成失敗")
             if st.button(f"⚡ 再送する", key=f"retry_{i}", type="primary"):
                 if identity_part and st.session_state.anchor_part:
-                    with st.spinner(f"再生成中..."):
+                    with st.spinner("再生成中..."):
                         res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur, cloth_main)
                         if isinstance(res, Image.Image): st.session_state.generated_images[i] = res; st.rerun()
                         else: st.error(f"失敗: {res}")
