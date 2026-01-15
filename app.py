@@ -9,8 +9,8 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. システム設定 (ver 2.61: Individual Retry Update) ---
-VERSION = "2.61"
+# --- 1. システム設定 (ver 2.62: Safe Pose Expansion) ---
+VERSION = "2.62"
 st.set_page_config(page_title=f"AI KISEKAE Manager v{VERSION}", layout="wide")
 
 # セッション状態の初期化
@@ -21,19 +21,25 @@ for key in ["generated_images", "error_log", "anchor_part", "wardrobe_task", "cu
         elif key in ["anchor_part", "wardrobe_task", "final_bg_prompt"]: st.session_state[key] = None
         else: st.session_state[key] = []
 
-# ポーズ定義 (ver 2.43 黄金律)
+# --- 【ver 2.62 拡張】厳選された安全なポーズリスト ---
 STAND_PROMPTS = [
-    "Full body portrait, standing naturally with a relaxed posture, hand gently touching hair, looking slightly away from camera, candid style",
-    "Full body portrait, leaning slightly against a wall or pillar, arms casually crossed, soft natural smile, angled body position",
-    "Full body portrait, captured mid-movement like slowly walking, looking back over shoulder with a gentle expression",
-    "Full body portrait, a dynamic pose standing with weight on one leg, one hand resting on hip, confident and relaxed look",
-    "Full body portrait, standing by a railing or window, looking out with a thoughtful expression, soft side lighting"
+    "Full body portrait, standing naturally, hand gently touching hair, looking slightly away, candid style",
+    "Full body portrait, leaning slightly against a wall, arms casually crossed, angled body position",
+    "Full body portrait, walking slowly, looking back over shoulder with a gentle expression",
+    "Full body portrait, standing with weight on one leg, one hand resting on hip, confident look",
+    "Full body portrait, standing by a railing, looking out thoughtfully, soft side lighting",
+    "Full body portrait, standing with hands behind back, chest slightly forward, looking at camera", # 追加: 背面手組み
+    "Full body portrait, leaning forward slightly towards the camera, hands on knees, engaging look", # 追加: 少し前傾
+    "Full body portrait, adjusted hair with both hands, elbows out, dynamic but stable posture" # 追加: 両手髪直し
 ]
+
 SIT_PROMPTS = [
-    "Full body portrait, relaxed sitting pose on a sofa or soft chair, one leg tucked naturally, looking at camera with a gentle smile",
-    "Full body portrait, sitting sideways on a chair, leaning slightly on the backrest, relaxed and engaging posture",
-    "Full body portrait, sitting gracefully on steps or a low stool, hands resting naturally in lap, looking slightly off-camera",
-    "Full body portrait, a casual sitting pose on a plush surface, leaning back slightly on hands, comfortable atmosphere"
+    "Full body portrait, relaxed sitting pose on a sofa, one leg tucked naturally, looking at camera",
+    "Full body portrait, sitting sideways on a chair, leaning on the backrest, relaxed posture",
+    "Full body portrait, sitting gracefully on steps, hands resting naturally in lap",
+    "Full body portrait, casual sitting pose on a plush surface, leaning back slightly on hands",
+    "Full body portrait, sitting on the edge of a bed, looking over shoulder, soft atmosphere", # 追加: ベッド端
+    "Full body portrait, sitting cross-legged on a rug, holding a coffee cup, cozy and natural" # 追加: あぐら風（上品に）
 ]
 
 # 6つの固定カテゴリー定義
@@ -46,7 +52,7 @@ CATEGORIES = {
     "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "dramatic evening lighting, luxury satin sheen, glamorous bokeh background"}
 }
 
-# --- 2. ユーティリティ ---
+# --- 2. ユーティリティ & 生成ロジック ---
 def apply_face_blur(img, radius=30):
     try:
         cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
@@ -80,7 +86,7 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
     return "RETRY_FAILED"
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, enable_blur, cat_key):
-    """【絶対ルール：ver 2.54/2.59 継承】顔と体型の固定プロンプト"""
+    """【絶対ルール：ver 2.54/2.58 継承】黄金律プロンプト"""
     cat_info = CATEGORIES[cat_key]
     prompt = (
         f"STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK.\n"
@@ -124,12 +130,11 @@ with st.sidebar:
     enable_blur = st.checkbox("🛡️ 楕円顔ブラー")
     run_btn = st.button("✨ 4枚一括生成")
 
-# 撮り直し/再生成用の identity_part
 identity_part = None
 if source_img:
     identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
 
-# --- 4. 生成実行 (進捗表示) ---
+# --- 4. 生成実行 ---
 if run_btn and source_img:
     st.session_state.error_log = []
     st.session_state.generated_images = [None] * 4
@@ -172,26 +177,20 @@ if run_btn and source_img:
         progress_bar.progress(current_step / 4)
         time.sleep(1)
 
-    status_container.success("✨ 生成完了！")
-    time.sleep(0.5); status_container.empty()
-    st.rerun()
+    status_container.success("✨ 生成完了！"); time.sleep(0.5); status_container.empty(); st.rerun()
 
-# --- 5. 表示エリア (ここを大幅強化) ---
+# --- 5. 表示エリア ---
 if st.session_state.error_log:
     with st.expander("⚠️ 生成エラーの記録", expanded=True):
         for err in st.session_state.error_log: st.warning(err)
 
 st.subheader(f"🖼️ 生成結果 (ver {VERSION})")
 cols = st.columns(2)
-
 for i in range(4):
     with cols[i % 2]:
         img = st.session_state.generated_images[i]
-        p_type = "立ち" if i < len(st.session_state.current_pose_texts) and "standing" in st.session_state.current_pose_texts[i] else "座り"
-        
         if img:
-            # 成功時：画像と保存・撮り直しボタン
-            st.image(img, caption=f"スロット {i+1} ({p_type})", use_container_width=True)
+            st.image(img, use_container_width=True)
             c1, c2 = st.columns(2)
             with c1:
                 buf = io.BytesIO(); img.save(buf, format="JPEG")
@@ -204,15 +203,10 @@ for i in range(4):
                             if isinstance(res, Image.Image): st.session_state.generated_images[i] = res; st.rerun()
                             else: st.error(f"失敗: {res}")
         else:
-            # 失敗時：プレースホルダーと「再送ボタン」
             st.info(f"🔳 スロット {i+1}: 写真がありません")
-            if st.button(f"⚡ この1枚を再送する", key=f"retry_{i}", type="primary"):
+            if st.button(f"⚡ 再送する", key=f"retry_{i}", type="primary"):
                 if identity_part and st.session_state.anchor_part:
-                    with st.spinner(f"スロット {i+1} を再生成中..."):
+                    with st.spinner(f"再生成中..."):
                         res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, enable_blur, cloth_main)
-                        if isinstance(res, Image.Image):
-                            st.session_state.generated_images[i] = res
-                            # エラーログからこの画像を削除（任意）
-                            st.rerun()
-                        else:
-                            st.error(f"再送失敗: {res}")
+                        if isinstance(res, Image.Image): st.session_state.generated_images[i] = res; st.rerun()
+                        else: st.error(f"失敗: {res}")
