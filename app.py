@@ -9,8 +9,8 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. システム設定 (ver 2.67: Hair Arrangement Update) ---
-VERSION = "2.67"
+# --- 1. システム設定 (ver 2.70: Total Hair & Color Master) ---
+VERSION = "2.70"
 st.set_page_config(page_title=f"AI KISEKAE Manager v{VERSION}", layout="wide")
 
 # セッション状態の初期化
@@ -21,14 +21,24 @@ for key in ["generated_images", "error_log", "anchor_part", "wardrobe_task", "cu
         elif key in ["anchor_part", "wardrobe_task", "final_bg_prompt"]: st.session_state[key] = None
         else: st.session_state[key] = []
 
-# --- 髪型定義マップ ---
+# --- 髪型・髪色定義マップ ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
-    "ポニーテール": "neat ponytail, showing the nape of the neck",
-    "ハーフアップ": "elegant half-up hairstyle",
-    "まとめ髪（シニヨン）": "sophisticated updo bun style",
+    "ポニーテール": "neat ponytail",
+    "ハーフアップ": "elegant half-up style",
+    "まとめ髪（シニヨン）": "sophisticated updo bun",
     "ゆるふわ巻き": "soft loose wavy curls",
     "ストレート": "sleek long straight hair"
+}
+
+HAIR_COLORS = {
+    "元画像のまま": "original hair color from IMAGE 1",
+    "ナチュラルブラック": "natural black hair",
+    "ダークブラウン": "deep dark brown hair",
+    "アッシュベージュ": "trendy ash beige hair color",
+    "ミルクティーグレージュ": "soft milk-tea greige hair color",
+    "ピンクブラウン": "subtle pinkish brown hair",
+    "ハニーブロンド": "bright honey blonde hair"
 }
 
 # ポーズプール (ver 2.66 準拠)
@@ -44,7 +54,7 @@ SIT_PROMPTS = [
     "Full body portrait, sitting gracefully on steps, hands resting in lap"
 ]
 
-# カテゴリー定義 (ver 2.66 のマイルド表現)
+# カテゴリー定義 (ver 2.66 準拠)
 CATEGORIES = {
     "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin, soft daylight"},
     "2. 水着（リゾート）": {"en": "High-end stylish resort swimwear", "back_prompt": "healthy skin glow, vibrant summer lighting"},
@@ -76,15 +86,15 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
             return str(e)
     return "RETRY_FAILED"
 
-def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, cat_key):
-    """【絶対ルール：ver 2.66 継承】顔固定を最優先しつつ髪型を反映"""
+def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
+    """【絶対ルール：ver 2.70】顔固定を最上位に置き、髪型・髪色を反映"""
     cat_info = CATEGORIES[cat_key]
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match.\n"
-        f"2. HAIR ARRANGEMENT: Style the hair as: {hair_style_en}. Keep the hair texture natural.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match. Maintain the original skin tone regardless of hair color.\n"
+        f"2. HAIR CUSTOMIZATION: Style: {hair_style_en}, Color: {hair_color_en}. Integrate naturally without altering facial features.\n"
         f"3. PHYSICAL IDENTITY (IMAGE 1): [FIXED_IDENTITY] Match the exact body mass and curves of IMAGE 1.\n"
-        f"4. POSE & COMPOSITION: {pose_text}. 85mm portrait.\n"
+        f"4. POSE & COMPOSITION: {pose_text}. 85mm portrait lens.\n"
         f"5. WARDROBE (IMAGE 2): {wardrobe_task}\n"
         f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, lips sealed, neutral expression."
     )
@@ -105,14 +115,18 @@ with st.sidebar:
     if ref_img: st.image(ref_img, use_container_width=True)
     st.divider()
     cloth_main = st.selectbox("衣装カテゴリー", list(CATEGORIES.keys()))
-    cloth_detail = st.text_input("衣装仕様書", placeholder="例：サテンの光沢")
-    hair_choice = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
+    cloth_detail = st.text_input("衣装仕様書", placeholder="例：シルク、サテン")
+    
+    # 髪の拡張設定
+    hair_style_choice = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
+    hair_color_choice = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys()))
+    
     st.divider()
     bg_text = st.text_input("場所", "高級ホテルの部屋")
     time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
     run_btn = st.button("✨ 4枚一括生成")
 
-# 撮り直し/再生成用の identity_part
+# 共通 identity_part
 identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg') if source_img else None
 
 # --- 4. 生成実行 ---
@@ -127,10 +141,10 @@ if run_btn and source_img:
     status_container = st.empty()
     progress_bar = st.progress(0)
 
-    # ステップ1: アンカー
+    # Step 1: アンカー
     with status_container.container():
-        st.info("🕒 ステップ 1/2: 衣装設計図を構築中...")
-        anchor_prompt = f"Professional studio product shot of {CATEGORIES[cloth_main]['en']}. Specs: {cloth_detail}. Isolated view."
+        st.info("🕒 Step 1/2: 衣装設計図を構築中...")
+        anchor_prompt = f"Studio product shot of {CATEGORIES[cloth_main]['en']}. Specs: {cloth_detail}. Isolated view."
         contents = [types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')] if ref_img else []
         res_data = generate_with_retry(client, contents, anchor_prompt)
         if isinstance(res_data, bytes):
@@ -139,10 +153,14 @@ if run_btn and source_img:
         else:
             st.error(f"アンカー失敗: {res_data}"); st.stop()
 
-    # ステップ2: 4枚生成
+    # Step 2: 4枚生成
     for i, p_txt in enumerate(st.session_state.current_pose_texts):
-        with status_container.container(): st.info(f"🎨 ステップ 2/2: 顔面固定 + 髪型アレンジ実行中 ({i+1}/4)...")
-        img_res = generate_image_by_text(client, p_txt, identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_choice], cloth_main)
+        with status_container.container(): st.info(f"🎨 Step 2/2: 顔面固定 + ヘアメイク中 ({i+1}/4)...")
+        img_res = generate_image_by_text(
+            client, p_txt, identity_part, st.session_state.anchor_part, 
+            st.session_state.wardrobe_task, st.session_state.final_bg_prompt, 
+            HAIR_STYLES[hair_style_choice], HAIR_COLORS[hair_color_choice], cloth_main
+        )
         if isinstance(img_res, Image.Image): st.session_state.generated_images[i] = img_res
         else: st.session_state.error_log.append(f"{i+1}枚目: {img_res}")
         progress_bar.progress((i+1)/4); time.sleep(1)
@@ -157,13 +175,24 @@ if any(st.session_state.generated_images):
             img = st.session_state.generated_images[i]
             if img:
                 st.image(img, use_container_width=True)
+                # 個別撮り直しボタン
                 if st.button(f"🔄 撮り直し #{i+1}", key=f"re_{i}"):
                     with st.spinner("再生成中..."):
-                        res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_choice], cloth_main)
+                        res = generate_image_by_text(
+                            client, st.session_state.current_pose_texts[i], identity_part, 
+                            st.session_state.anchor_part, st.session_state.wardrobe_task, 
+                            st.session_state.final_bg_prompt, HAIR_STYLES[hair_style_choice], 
+                            HAIR_COLORS[hair_color_choice], cloth_main
+                        )
                         if isinstance(res, Image.Image): st.session_state.generated_images[i] = res; st.rerun()
             else:
                 st.info(f"🔳 スロット {i+1}: 生成失敗")
                 if st.button(f"⚡ 再送 #{i+1}", key=f"retry_{i}", type="primary"):
                     with st.spinner("再送中..."):
-                        res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_choice], cloth_main)
+                        res = generate_image_by_text(
+                            client, st.session_state.current_pose_texts[i], identity_part, 
+                            st.session_state.anchor_part, st.session_state.wardrobe_task, 
+                            st.session_state.final_bg_prompt, HAIR_STYLES[hair_style_choice], 
+                            HAIR_COLORS[hair_color_choice], cloth_main
+                        )
                         if isinstance(res, Image.Image): st.session_state.generated_images[i] = res; st.rerun()
