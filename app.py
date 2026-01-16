@@ -9,8 +9,8 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. システム設定 (ver 2.70: Total Hair & Color Master) ---
-VERSION = "2.70"
+# --- 1. システム設定 (ver 2.71: Hairstyle List Update) ---
+VERSION = "2.71"
 st.set_page_config(page_title=f"AI KISEKAE Manager v{VERSION}", layout="wide")
 
 # セッション状態の初期化
@@ -21,16 +21,18 @@ for key in ["generated_images", "error_log", "anchor_part", "wardrobe_task", "cu
         elif key in ["anchor_part", "wardrobe_task", "final_bg_prompt"]: st.session_state[key] = None
         else: st.session_state[key] = []
 
-# --- 髪型・髪色定義マップ ---
+# --- 髪型定義マップ (指定順序に変更・追加) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
-    "ポニーテール": "neat ponytail",
+    "ゆるふあ巻き": "soft loose wavy curls",
     "ハーフアップ": "elegant half-up style",
-    "まとめ髪（シニヨン）": "sophisticated updo bun",
-    "ゆるふわ巻き": "soft loose wavy curls",
+    "ツインテール": "playful twin tails",
+    "ポニーテール": "neat ponytail",
+    "まとめ髪": "sophisticated updo bun",
     "ストレート": "sleek long straight hair"
 }
 
+# --- 髪色定義マップ (変更なし) ---
 HAIR_COLORS = {
     "元画像のまま": "original hair color from IMAGE 1",
     "ナチュラルブラック": "natural black hair",
@@ -87,7 +89,7 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
     return "RETRY_FAILED"
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
-    """【絶対ルール：ver 2.70】顔固定を最上位に置き、髪型・髪色を反映"""
+    """【絶対ルール：ver 2.70 継承】顔固定を最上位に置き、髪型・髪色を反映"""
     cat_info = CATEGORIES[cat_key]
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
@@ -117,7 +119,7 @@ with st.sidebar:
     cloth_main = st.selectbox("衣装カテゴリー", list(CATEGORIES.keys()))
     cloth_detail = st.text_input("衣装仕様書", placeholder="例：シルク、サテン")
     
-    # 髪の拡張設定
+    # 髪型アレンジ (指定順序で表示)
     hair_style_choice = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
     hair_color_choice = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys()))
     
