@@ -185,4 +185,9 @@ def show_kisekae_ui():
                 else:
                     st.info(f"🔳 スロット {i+1} は空です")
                     if st.button(f"⚡ 再送 #{i+1}", key=f"retry_{i}", type="primary"):
-                        if source_img and "anchor_part" in st.session
+                        if source_img and "anchor_part" in st.session_state:
+                            with st.spinner(f"スロット {i+1} を生成中..."):
+                                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_style_choice], HAIR_COLORS[hair_color_choice], cloth_main)
+                                if isinstance(res, bytes):
+                                    st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+                                    st.rerun()
