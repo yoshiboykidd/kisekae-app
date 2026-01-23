@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 定義 (ver 2.72/2.73 準拠) ---
+# --- 髪型・髪色の定義 (ver 2.73 準拠) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -27,21 +27,17 @@ HAIR_COLORS = {
     "ハニーブロンド": "bright honey blonde hair"
 }
 
+# --- ポーズプール ---
 STAND_PROMPTS = [
     "Full body portrait, standing naturally, hand gently touching hair, looking away",
     "Full body portrait, leaning against a wall, arms casually crossed",
     "Full body portrait, walking slowly, looking back over shoulder",
-    "Full body portrait, standing with weight on one leg, one hand on hip",
-    "Full body portrait, standing by a railing, looking out thoughtfully",
-    "Full body portrait, standing with hands behind back, looking at camera"
+    "Full body portrait, standing with weight on one leg, one hand on hip"
 ]
-
 SIT_PROMPTS = [
     "Full body portrait, relaxed sitting pose on a sofa, looking at camera",
     "Full body portrait, sitting sideways on a chair, leaning on the backrest",
-    "Full body portrait, sitting gracefully on steps, hands resting in lap",
-    "Full body portrait, casual sitting pose on a plush surface, leaning back on hands",
-    "Full body portrait, sitting on the edge of a bed, looking over shoulder"
+    "Full body portrait, sitting gracefully on steps, hands resting in lap"
 ]
 
 CATEGORIES = {
@@ -53,6 +49,7 @@ CATEGORIES = {
     "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting, soft facial fill-light"}
 }
 
+# --- 生成コア関数 ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
     for attempt in range(max_retries + 1):
         try:
@@ -67,7 +64,8 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
             )
             if response.candidates and response.candidates[0].content.parts:
                 return response.candidates[0].content.parts[0].inline_data.data
-            else: return "SAFETY_BLOCK"
+            else:
+                return "SAFETY_BLOCK"
         except Exception as e:
             if "503" in str(e) and attempt < max_retries:
                 time.sleep(2); continue
@@ -78,32 +76,30 @@ def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardro
     cat_info = CATEGORIES[cat_key]
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match. Maintain the original skin tone.\n"
-        f"2. HAIR CUSTOMIZATION: Style: {hair_style_en}, Color: {hair_color_en}. Integrate naturally.\n"
-        f"3. PHYSICAL IDENTITY (IMAGE 1): [FIXED_IDENTITY] Match the exact body mass and curves of IMAGE 1.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match.\n"
+        f"2. HAIR CUSTOMIZATION: Style: {hair_style_en}, Color: {hair_color_en}.\n"
+        f"3. PHYSICAL IDENTITY (IMAGE 1): [FIXED_IDENTITY] Match body mass of IMAGE 1.\n"
         f"4. POSE & COMPOSITION: {pose_text}. 85mm portrait lens.\n"
         f"5. WARDROBE (IMAGE 2): {wardrobe_task}\n"
-        f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, lips sealed, neutral expression."
+        f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
     )
-    res_data = generate_with_retry(client, [identity_part, anchor_part], prompt)
-    if isinstance(res_data, bytes):
-        return Image.open(io.BytesIO(res_data)).resize((600, 900))
-    return res_data
+    return generate_with_retry(client, [identity_part, anchor_part], prompt)
 
-# --- UI 表示用メイン関数 ---
+# --- UI メイン関数 ---
 def show_kisekae_ui():
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # セッション初期化
+    # セッション状態の初期化
     if "generated_images" not in st.session_state:
         st.session_state.generated_images = [None] * 4
-        st.session_state.error_log = []
+    if "current_pose_texts" not in st.session_state:
+        st.session_state.current_pose_texts = [None] * 4
 
     st.header("✨ AI KISEKAE Main System")
     
     with st.sidebar:
-        source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="kisekae_source")
-        ref_img = st.file_uploader("衣装参考 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="kisekae_ref")
+        source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="kise_src")
+        ref_img = st.file_uploader("衣装参考 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="kise_ref")
         st.divider()
         cloth_main = st.selectbox("衣装カテゴリー", list(CATEGORIES.keys()))
         cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン")
@@ -115,10 +111,13 @@ def show_kisekae_ui():
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         run_btn = st.button("✨ 4枚一括生成", type="primary")
 
-    identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg') if source_img else None
+    # キャスト画像の準備
+    identity_part = None
+    if source_img:
+        identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
 
+    # --- 一括生成ロジック ---
     if run_btn and source_img:
-        st.session_state.error_log = []
         st.session_state.generated_images = [None] * 4
         time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "warm sunset glow", "夜 (Night)": "night lights"}
         st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
@@ -130,29 +129,35 @@ def show_kisekae_ui():
         random.shuffle(poses)
         st.session_state.current_pose_texts = poses
 
-        status_container = st.empty()
-        progress_bar = st.progress(0)
+        status = st.empty()
+        progress = st.progress(0)
 
-        with status_container.container():
-            st.info("🕒 Step 1/2: 衣装設計図を構築中...")
-            anchor_prompt = f"Studio product shot of {CATEGORIES[cloth_main]['en']}. Specs: {cloth_detail}. Isolated view."
-            contents = [types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')] if ref_img else []
-            res_data = generate_with_retry(client, contents, anchor_prompt)
-            if isinstance(res_data, bytes):
-                st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
-                st.session_state.wardrobe_task = f"Strictly replicate the fashion design from IMAGE 2. {cloth_detail}."
-            else:
-                st.error("アンカー失敗"); st.stop()
+        # Step 1: アンカー
+        status.info("🕒 Step 1/2: 衣装設計図を構築中...")
+        anchor_prompt = f"Studio product shot of {CATEGORIES[cloth_main]['en']}. Specs: {cloth_detail}."
+        contents = [types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')] if ref_img else []
+        res_data = generate_with_retry(client, contents, anchor_prompt)
+        
+        if isinstance(res_data, bytes):
+            st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
+            st.session_state.wardrobe_task = f"Strictly replicate the fashion design from IMAGE 2. {cloth_detail}."
+        else:
+            st.error("アンカー生成に失敗しました。")
+            st.stop()
 
-        for i, p_txt in enumerate(st.session_state.current_pose_texts):
-            with status_container.container(): st.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
-            img_res = generate_image_by_text(client, p_txt, identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_style_choice], HAIR_COLORS[hair_color_choice], cloth_main)
-            if isinstance(img_res, Image.Image): st.session_state.generated_images[i] = img_res
-            progress_bar.progress((i+1)/4); time.sleep(1)
-        status_container.empty(); st.rerun()
+        # Step 2: 4枚生成
+        for i in range(4):
+            status.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
+            res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_style_choice], HAIR_COLORS[hair_color_choice], cloth_main)
+            if isinstance(res, bytes):
+                st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+            progress.progress((i+1)/4)
+        
+        status.empty()
+        st.rerun()
 
-    # 表示エリア
-    if any(st.session_state.generated_images):
+    # --- 画像表示と個別ボタンエリア ---
+    if any(img is not None for img in st.session_state.generated_images):
         cols = st.columns(2)
         for i in range(4):
             with cols[i % 2]:
@@ -161,10 +166,23 @@ def show_kisekae_ui():
                     st.image(img, use_container_width=True)
                     c1, c2 = st.columns(2)
                     with c1:
-                        buf = io.BytesIO(); img.save(buf, format="JPEG")
-                        st.download_button("💾 保存", buf.getvalue(), f"img_{i+1}.jpg", "image/jpeg", key=f"dl_{i}")
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG")
+                        st.download_button(f"💾 保存 #{i+1}", buf.getvalue(), f"img_{i+1}.jpg", "image/jpeg", key=f"dl_{i}")
                     with c2:
-                        if st.button(f"🔄 撮り直し", key=f"re_{i}"):
-                            with st.spinner("再生成中..."):
-                                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_style_choice], HAIR_COLORS[hair_color_choice], cloth_main)
-                                if isinstance(res, Image.Image): st.session_state.generated_images[i] = res; st.rerun()
+                        # ★撮り直しボタンの修正ポイント
+                        if st.button(f"🔄 撮り直し #{i+1}", key=f"re_{i}"):
+                            if not source_img:
+                                st.warning("キャスト写真をアップロードしてください。")
+                            else:
+                                with st.spinner(f"スロット {i+1} を再生成中..."):
+                                    res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_style_choice], HAIR_COLORS[hair_color_choice], cloth_main)
+                                    if isinstance(res, bytes):
+                                        st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+                                        st.rerun() # セッション更新後に強制リフレッシュ
+                                    else:
+                                        st.error(f"再生成失敗: {res}")
+                else:
+                    st.info(f"🔳 スロット {i+1} は空です")
+                    if st.button(f"⚡ 再送 #{i+1}", key=f"retry_{i}", type="primary"):
+                        if source_img and "anchor_part" in st.session
