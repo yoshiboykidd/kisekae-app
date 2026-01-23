@@ -15,16 +15,14 @@ def show_flatlay_ui():
     if run and ref:
         with st.spinner("アンカー生成中..."):
             try:
-                # 辞書形式で設定
-                flat_config = {
-                    "response_modalities": ["IMAGE"],
-                    "image_generation_config": {"aspect_ratio": "1:1"}
-                }
                 contents = [types.Part.from_bytes(data=ref.getvalue(), mime_type='image/jpeg')]
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
-                    contents=contents + [f"Studio product flat lay of {desc}. Scan quality."],
-                    config=flat_config
+                    contents=contents + [f"Studio product flat lay of {desc}. Industrial scan quality."],
+                    config=types.GenerateContentConfig(
+                        response_modalities=['IMAGE'],
+                        image_generation_config=types.ImageGenerationConfig(aspect_ratio="1:1")
+                    )
                 )
                 if response.candidates and response.candidates[0].content.parts:
                     img = Image.open(io.BytesIO(response.candidates[0].content.parts[0].inline_data.data))
