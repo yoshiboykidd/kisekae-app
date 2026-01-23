@@ -4,15 +4,13 @@ import logic_flatlay
 
 # --- 1. アプリ全体の基本設定 ---
 st.set_page_config(
-    page_title="AI KISEKAE Manager Pro",
+    page_title="AI KISEKAE Manager Pro v2.74",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. パスワード認証ロジック (Secrets参照・安全版) ---
+# --- 2. パスワード認証ロジック ---
 def check_password():
-    """Secretsからパスワードを読み込み、認証を行う"""
-    
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
@@ -23,13 +21,11 @@ def check_password():
     password_input = st.text_input("Enter Password", type="password")
     
     if st.button("Login"):
-        # ソースコードにパスワードを書かず、Secretsから比較します
-        if password_input == st.secrets["PASSWORD"]:
+        if password_input == "karin10":
             st.session_state["password_correct"] = True
             st.rerun()
         else:
             st.error("😕 Password incorrect")
-    
     return False
 
 # --- 3. メイン処理 ---
@@ -40,7 +36,6 @@ if check_password():
         ["✨ AI KISEKAE (Main)", "👕 平置きアンカー生成"],
         index=0
     )
-    
     st.sidebar.divider()
 
     if mode == "✨ AI KISEKAE (Main)":
