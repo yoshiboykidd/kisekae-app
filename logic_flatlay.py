@@ -18,13 +18,17 @@ def show_flatlay_ui():
                 contents = [types.Part.from_bytes(data=ref.getvalue(), mime_type='image/jpeg')]
                 response = client.models.generate_content(
                     model='gemini-3-pro-image-preview',
-                    contents=contents + [f"Studio product flat lay of {desc}. Industrial scan quality."],
+                    contents=contents + [f"Studio product flat lay of {desc}. Scan quality."],
                     config=types.GenerateContentConfig(
                         response_modalities=['IMAGE'],
-                        image_generation_config=types.ImageGenerationConfig(aspect_ratio="1:1")
+                        image_generation_config=types.ImageGenerationConfig(
+                            aspect_ratio="1:1"
+                        )
                     )
                 )
                 if response.candidates and response.candidates[0].content.parts:
-                    img = Image.open(io.BytesIO(response.candidates[0].content.parts[0].inline_data.data))
+                    img_data = response.candidates[0].content.parts[0].inline_data.data
+                    img = Image.open(io.BytesIO(img_data))
                     st.image(img, use_container_width=True)
-            except Exception as e: st.error(f"エラー: {e}")
+            except Exception as e:
+                st.error(f"エラー: {e}")
