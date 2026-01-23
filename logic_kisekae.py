@@ -1,13 +1,12 @@
 import streamlit as st
 from google import genai
-# types は Part 等の基本要素にのみ使用し、Config系には使用しない
 from google.genai import types
 from PIL import Image
 import io
 import time
 import random
 
-# --- 定義データ (黄金律・髪型順序厳守) ---
+# --- 1. 絶対不変の定義データ (ver 2.83) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -28,8 +27,8 @@ HAIR_COLORS = {
     "ハニーブロンド": "bright honey blonde hair color"
 }
 
-STAND_PROMPTS = ["Full body, standing naturally", "Full body, leaning against a wall", "Full body, walking slowly", "Full body, weight on one leg"]
-SIT_PROMPTS = ["Full body, sitting on sofa", "Full body, sitting sideways on chair", "Full body, sitting on steps"]
+STAND_PROMPTS = ["Full body portrait, standing naturally", "Full body portrait, leaning against a wall", "Full body portrait, walking slowly", "Full body portrait, weight on one leg"]
+SIT_PROMPTS = ["Full body portrait, relaxed sitting on sofa", "Full body portrait, sitting sideways on chair", "Full body portrait, sitting gracefully"]
 
 CATEGORIES = {
     "1. 私服（日常）": {"en": "Casual Japanese fashion", "back_prompt": "natural skin, daylight"},
@@ -37,32 +36,28 @@ CATEGORIES = {
     "3. 部屋着（リラックス）": {"en": "Silk night-fashion", "back_prompt": "soft focus, rim light"},
     "4. オフィス（スーツ）": {"en": "Business professional attire", "back_prompt": "studio look"},
     "5. コスチューム": {"en": "Themed costume", "back_prompt": "meticulous details"},
-    "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "dramatic lighting"}
+    "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
-# --- 2. 生成コア関数 (ver 2.81: Version-Agnostic Dict Config) ---
+# --- 2. 生成コア関数 (ver 2.83: SDK 0.6.0 準拠) ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
     for attempt in range(max_retries + 1):
         try:
-            # ★ 修正：types.ImageGenerationConfig 等の「クラス」を使わず「辞書」で渡す
-            # これにより SDK のバージョンによる名前変更エラーを回避
-            gen_config = {
-                "response_modalities": ["IMAGE"],
-                "safety_settings": [
-                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}
-                ],
-                "image_generation_config": {
-                    "aspect_ratio": "2:3",
-                    "number_of_images": 1
-                }
-            }
-            
+            # SDK 0.6.0 では ImageGenerationConfig クラスを使用
             response = client.models.generate_content(
                 model='gemini-3-pro-image-preview',
                 contents=contents + [prompt],
-                config=gen_config
+                config=types.GenerateContentConfig(
+                    response_modalities=['IMAGE'],
+                    safety_settings=[
+                        types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')
+                    ],
+                    image_generation_config=types.ImageGenerationConfig(
+                        aspect_ratio="2:3",
+                        number_of_images=1
+                    )
+                )
             )
-            
             if response.candidates and response.candidates[0].content.parts:
                 return response.candidates[0].content.parts[0].inline_data.data
             return "SAFETY_BLOCK"
@@ -76,9 +71,9 @@ def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardro
     cat_info = CATEGORIES[cat_key]
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match.\n"
-        f"2. HAIR: Style: {hair_style_en}, Color: {hair_color_en}.\n"
-        f"3. PHYSICAL: Match exact body mass of IMAGE 1.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face structure of IMAGE 1. 100% identity match.\n"
+        f"2. HAIR: Style: {hair_style_en}, Color: {hair_color_en}. Integrate naturally.\n"
+        f"3. PHYSICAL IDENTITY (IMAGE 1): [FIXED_IDENTITY] Match body mass of IMAGE 1.\n"
         f"4. POSE: {pose_text}. 85mm portrait.\n"
         f"5. WARDROBE: {wardrobe_task}\n"
         f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
@@ -89,7 +84,7 @@ def show_kisekae_ui():
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     if "generated_images" not in st.session_state: st.session_state.generated_images = [None] * 4
 
-    st.header("✨ AI KISEKAE Main System (v2.81)")
+    st.header("✨ AI KISEKAE Main System")
     with st.sidebar:
         source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
         ref_img = st.file_uploader("衣装参考 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
@@ -117,7 +112,7 @@ def show_kisekae_ui():
         status = st.empty(); progress = st.progress(0)
         status.info("🕒 Step 1/2: 衣装アンカー抽出中...")
         
-        anchor_prompt = f"Professional product shot of {CATEGORIES[cloth_main]['en']} material. {cloth_detail}. Textile scan."
+        anchor_prompt = f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. Textile scan."
         contents = [types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')] if ref_img else []
         res_data = generate_with_retry(client, contents, anchor_prompt)
         
@@ -134,7 +129,6 @@ def show_kisekae_ui():
             status.empty(); st.rerun()
         else: st.error(f"アンカー失敗: {res_data}")
 
-    # 画像表示
     if any(img is not None for img in st.session_state.generated_images):
         cols = st.columns(2)
         for i in range(4):
