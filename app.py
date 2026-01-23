@@ -9,25 +9,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. パスワード認証ロジック (確実なリフレッシュ版) ---
+# --- 2. パスワード認証ロジック (Secrets参照・安全版) ---
 def check_password():
-    """パスワードをチェックし、成功したら画面を即座に更新する"""
+    """Secretsからパスワードを読み込み、認証を行う"""
     
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
-    # すでに認証済みの場合はTrueを返す
     if st.session_state["password_correct"]:
         return True
 
-    # ログイン画面の表示
     st.title("🔐 Authentication")
     password_input = st.text_input("Enter Password", type="password")
     
     if st.button("Login"):
-        if password_input == "karin10":
+        # ソースコードにパスワードを書かず、Secretsから比較します
+        if password_input == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
-            st.rerun()  # ★ここが重要：画面を強制的に書き換える
+            st.rerun()
         else:
             st.error("😕 Password incorrect")
     
@@ -35,8 +34,6 @@ def check_password():
 
 # --- 3. メイン処理 ---
 if check_password():
-    # パスワードが正しい場合のみ、以下のUIが表示される
-    
     st.sidebar.title("🚀 NAVIGATION")
     mode = st.sidebar.radio(
         "機能を選択してください",
