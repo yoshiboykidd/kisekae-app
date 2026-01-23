@@ -6,7 +6,7 @@ import io
 import time
 
 # --- 1. 定数定義 ---
-VERSION = "1.8"
+VERSION = "1.9"
 FLAT_LAY_PROMPT_BASE = (
     "A professional flat lay photograph of a standalone clothing item. "
     "Top-down view, centered on a clean white background. "
@@ -16,7 +16,7 @@ FLAT_LAY_PROMPT_BASE = (
 
 def show_flatlay_ui():
     st.title(f"👕 衣装制作君 (v{VERSION})")
-    st.info("APIのメソッド構成を確認し、利用可能な最適な方法で生成を実行します。")
+    st.info("SDKの仕様変更に合わせ、Imagen 4.0 の設定項目を最適化しました。")
 
     # --- 2. APIクライアントの初期化 ---
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
@@ -51,28 +51,22 @@ def show_flatlay_ui():
                         st.error(f"解析エラー: {e}")
                         return
 
-                # --- Step 2: 生成 (Imagen 4.0 を動的メソッド呼び出しで実行) ---
+                # --- Step 2: 生成 (Imagen 4.0) ---
                 with st.spinner("Step 2: 描画中..."):
                     final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nDetails: {clothing_desc}"
                     
-                    # 404/400エラー回避のため、利用可能なメソッドを特定して実行
                     try:
-                        # google-genai SDK 0.3.0+ では client.models.generate_image が標準
-                        # 存在しない場合は、より低レイヤーな API 呼び出しを試行
-                        if hasattr(client.models, 'generate_image'):
-                            gen_response = client.models.generate_image(
-                                model='imagen-4.0-generate-001',
-                                prompt=final_gen_prompt,
-                                config=types.GenerateImageConfig(
-                                    aspect_ratio="2:3",
-                                    safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
-                                    output_mime_type='image/png'
-                                )
+                        # v1.9修正: エラーの原因となっていた safety_settings を削除し、
+                        # GenerateImageConfig の引数を最小限（許可されているもののみ）に変更
+                        # 
+                        gen_response = client.models.generate_image(
+                            model='imagen-4.0-generate-001',
+                            prompt=final_gen_prompt,
+                            config=types.GenerateImageConfig(
+                                aspect_ratio="2:3",
+                                output_mime_type='image/png'
                             )
-                        else:
-                            # 予備: generate_image メソッドが見当たらない場合、他のモデルでの生成を試みる
-                            st.warning("SDKに generate_image メソッドが見つかりません。")
-                            return
+                        )
 
                         if gen_response.generated_images:
                             img_bytes = gen_response.generated_images[0].image.image_bytes
@@ -83,7 +77,7 @@ def show_flatlay_ui():
                             st.error("モデルから画像が返されませんでした。")
 
                     except Exception as e:
-                        st.error(f"生成エラー (v1.8): {str(e)}")
-                        st.info("requirements.txt で google-genai>=0.3.0 が正しくインストールされているか確認してください。")
+                        # ここでエラーが出る場合は、さらに config 自体を None にして試す必要があります
+                        st.error(f"生成エラー (v1.9): {str(e)}")
     else:
         st.write("サイドバーから画像をアップロードしてください。")
