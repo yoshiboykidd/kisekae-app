@@ -6,7 +6,7 @@ import io
 import time
 
 # --- 1. 定数定義 ---
-VERSION = "1.2"
+VERSION = "1.3"
 FLAT_LAY_PROMPT_BASE = (
     "Professional flat lay photography of apparel, captured from a direct top-down bird's eye view. "
     "The clothing is organized neatly on a clean, solid white studio background. "
@@ -19,8 +19,7 @@ def show_flatlay_ui():
     st.title(f"👕 衣装制作君 (v{VERSION})")
     st.info("写真から衣装のみを抽出し、KISEKAE用の「衣装設計図（平置き画像）」を生成します。")
 
-    # --- 2. APIクライアントの初期化 (v1.2修正: 標準設定に戻す) ---
-    # 逆に明示的な指定を外すことで、SDKに最適なエンドポイントを自動選択させます
+    # --- 2. APIクライアントの初期化 ---
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
     # UIレイアウト
@@ -32,7 +31,18 @@ def show_flatlay_ui():
             "Casual fashion", "Night-fashion", "Satin slip", "Silk camisole", "Business suit", "Swimwear"
         ])
         
+        st.divider()
         generate_btn = st.button("✨ 平置き画像を生成", type="primary")
+        
+        # --- v1.3 追加: 診断用ボタン ---
+        st.subheader("🛠 診断ツール")
+        if st.button("利用可能なモデルをリストアップ"):
+            try:
+                st.write("利用可能なモデル一覧:")
+                for m in client.models.list():
+                    st.code(m.name)
+            except Exception as e:
+                st.error(f"モデルリストの取得に失敗: {e}")
 
     if uploaded_file:
         col1, col2 = st.columns(2)
@@ -46,27 +56,24 @@ def show_flatlay_ui():
                 st.subheader("2. 生成された衣装アンカー")
                 
                 with st.spinner("Geminiが衣装を解析・再構築中..."):
-                    # --- Step 1: 衣装の詳細を言語化 (v1.2修正: ショートハンド名を使用) ---
-                    # SDKが内部で models/ を補完するため、ここではモデル名のみを指定します
+                    # --- Step 1: 解析 (v1.3修正: エイリアスではなく詳細なバージョン名を指定) ---
                     analysis_prompt = (
                         f"Identify and analyze the {category} in this image. "
-                        "Describe the garment strictly: exact color, fabric material (satin, cotton, silk, etc.), "
-                        "patterns, collar shape, buttons, and sleeve details. "
-                        "Ignore the person, their pose, and the background. "
-                        "Output only the detailed physical description of the garment."
+                        "Describe the garment strictly: color, fabric material, patterns, and shape. "
+                        "Output only the detailed physical description."
                     )
                     
                     input_img_part = types.Part.from_bytes(data=uploaded_file.getvalue(), mime_type='image/jpeg')
                     
                     try:
-                        # 解析実行 (モデル名を gemini-1.5-flash に戻す)
+                        # gemini-1.5-flash-002 は多くの環境で安定して動作する指定方法です
                         analysis_res = client.models.generate_content(
-                            model='gemini-1.5-flash', 
+                            model='gemini-1.5-flash-002', 
                             contents=[analysis_prompt, input_img_part]
                         )
                         clothing_desc = analysis_res.text
 
-                        # --- Step 2: 平置き画像を生成 (v1.2修正: ショートハンド名を使用) ---
+                        # --- Step 2: 生成 (v1.3修正: モデル名を再定義) ---
                         final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nClothing details: {clothing_desc}"
                         
                         gen_response = client.models.generate_content(
@@ -82,25 +89,16 @@ def show_flatlay_ui():
                         if gen_response.candidates and gen_response.candidates[0].content.parts:
                             img_data = gen_response.candidates[0].content.parts[0].inline_data.data
                             final_img = Image.open(io.BytesIO(img_data))
-                            
                             st.image(final_img, use_container_width=True)
                             
-                            # ダウンロードボタン
                             buf = io.BytesIO()
                             final_img.save(buf, format="PNG")
-                            st.download_button(
-                                label="📥 衣装アンカーを保存（IMAGE 2用）",
-                                data=buf.getvalue(),
-                                file_name=f"flat_anchor_{int(time.time())}.png",
-                                mime="image/png"
-                            )
+                            st.download_button("📥 衣装アンカーを保存", buf.getvalue(), f"flat_{int(time.time())}.png", "image/png")
                         else:
-                            st.warning("画像の生成に失敗しました。")
+                            st.warning("生成結果が空です。セーフティフィルタを確認してください。")
 
                     except Exception as e:
-                        # エラー内容をより詳細に表示
-                        st.error(f"エラー内容: {str(e)}")
-                        if "404" in str(e):
-                            st.info("APIキーの権限、またはモデル名が現在のリージョンで有効か確認してください。")
+                        st.error(f"エラー発生 (v1.3): {str(e)}")
+                        st.info("サイドバーの『利用可能なモデルをリストアップ』を押して、出力された名前を確認してください。")
     else:
         st.write("サイドバーから画像をアップロードしてください。")
