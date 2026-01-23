@@ -13,8 +13,8 @@ FLAT_LAY_PROMPT_BASE = (
 )
 
 def show_flatlay_ui():
-    st.title("👕 衣装アンカー（平置き）生成ツール")
-    st.info("人物写真から衣装のみを抽出し、KISEKAE用の「衣装設計図（平置き画像）」を生成します。")
+    st.title("👕 衣装制作君")
+    st.info("写真から衣装のみを抽出し、KISEKAE用の「衣装設計図（平置き画像）」を生成します。")
 
     # APIクライアントの初期化
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
