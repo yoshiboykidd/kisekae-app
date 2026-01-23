@@ -13,7 +13,7 @@ st.set_page_config(
 def check_password():
     """パスワードが正しいかチェックし、結果を返す"""
     def password_entered():
-        if st.session_state["password"] == st.secrets["PASSWORD"]:
+        if st.session_state["password"] == "karin10":
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # セッションからパスワードを削除
         else:
