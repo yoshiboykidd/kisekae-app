@@ -6,9 +6,9 @@ import io
 import time
 
 # --- 1. 定数定義 ---
-VERSION = "1.9"
+VERSION = "2.0"
 FLAT_LAY_PROMPT_BASE = (
-    "A professional flat lay photograph of a standalone clothing item. "
+    "A professional flat lay photography of a standalone clothing item. "
     "Top-down view, centered on a clean white background. "
     "High-end studio lighting, 8k resolution, photorealistic fabric texture. "
     "STRICT RULE: No humans, no mannequins, no accessories. Apparel only."
@@ -16,7 +16,7 @@ FLAT_LAY_PROMPT_BASE = (
 
 def show_flatlay_ui():
     st.title(f"👕 衣装制作君 (v{VERSION})")
-    st.info("SDKの仕様変更に合わせ、Imagen 4.0 の設定項目を最適化しました。")
+    st.info("モデルの制約に合わせ、アスペクト比を『3:4』に最適化しました。")
 
     # --- 2. APIクライアントの初期化 ---
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
@@ -56,14 +56,13 @@ def show_flatlay_ui():
                     final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nDetails: {clothing_desc}"
                     
                     try:
-                        # v1.9修正: エラーの原因となっていた safety_settings を削除し、
-                        # GenerateImageConfig の引数を最小限（許可されているもののみ）に変更
+                        # v2.0修正: サポートされているアスペクト比 "3:4" を指定
                         # 
                         gen_response = client.models.generate_image(
                             model='imagen-4.0-generate-001',
                             prompt=final_gen_prompt,
                             config=types.GenerateImageConfig(
-                                aspect_ratio="2:3",
+                                aspect_ratio="3:4",
                                 output_mime_type='image/png'
                             )
                         )
@@ -77,7 +76,6 @@ def show_flatlay_ui():
                             st.error("モデルから画像が返されませんでした。")
 
                     except Exception as e:
-                        # ここでエラーが出る場合は、さらに config 自体を None にして試す必要があります
-                        st.error(f"生成エラー (v1.9): {str(e)}")
+                        st.error(f"生成エラー (v2.0): {str(e)}")
     else:
         st.write("サイドバーから画像をアップロードしてください。")
