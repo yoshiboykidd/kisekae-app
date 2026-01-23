@@ -2,11 +2,11 @@ import streamlit as st
 import os
 import sys
 
-# --- 強制パス設定 ---
-# 現在の app.py がある場所を特定し、modules フォルダを探せるようにします
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
+# --- 強制パス設定（決定版） ---
+# app.pyがある場所にある 'modules' フォルダを、Pythonの検索リストの最優先（0番目）に追加します
+modules_path = os.path.join(os.path.dirname(__file__), "modules")
+if modules_path not in sys.path:
+    sys.path.insert(0, modules_path)
 
 # --- 1. アプリ全体の基本設定 ---
 st.set_page_config(
@@ -15,14 +15,12 @@ st.set_page_config(
 )
 
 # --- 2. モジュールのインポート ---
+# フォルダ名を介さず、ファイル名を直接指定して読み込みます
 try:
-    # フォルダ.ファイル名 の形式で直接指定
-    import modules.logic_kisekae as logic_kisekae
-    import modules.logic_flatlay as logic_flatlay
+    import logic_kisekae
+    import logic_flatlay
 except Exception as e:
-    st.error(f"【エラー】モジュールが読み込めません。GitHubの構成を確認してください。: {e}")
-    # どこで探しているかを表示（デバッグ用）
-    st.write(f"現在のパス: {sys.path}")
+    st.error(f"【エラー】ファイルが読み込めませんでした。GitHubの構成を再確認してください。: {e}")
     st.stop()
 
 # --- 3. 画面構成 ---
@@ -31,7 +29,9 @@ st.title("AI KISEKAE Manager")
 tab1, tab2 = st.tabs(["✨ AI KISEKAE (Main)", "👕 平置きアンカー生成"])
 
 with tab1:
+    # 'modules.' を外して呼び出し
     logic_kisekae.show_kisekae_ui()
 
 with tab2:
+    # 'modules.' を外して呼び出し
     logic_flatlay.show_flatlay_ui()
