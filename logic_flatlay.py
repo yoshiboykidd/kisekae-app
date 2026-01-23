@@ -6,20 +6,24 @@ import io
 import time
 
 # --- 1. 定数定義 ---
-VERSION = "1.4"
-# v1.4修正: 最新のImagen 4.0に最適化した高品質プロンプト
+VERSION = "1.5"
+# Gemini 2.0 Flashの理解力に合わせた、より指示の通りやすいプロンプト
 FLAT_LAY_PROMPT_BASE = (
-    "Masterpiece, professional flat lay photography of a standalone clothing item. "
-    "Top-down bird's eye view, centered composition on a solid minimalist white background. "
-    "Ultra-high resolution 8k texture, realistic fabric folds, soft studio lighting. "
-    "STRICT RULE: No humans, no body parts, no mannequins. Pure apparel only."
+    "Task: Create a professional flat lay image of a standalone clothing item. "
+    "View: Direct top-down, bird's-eye view. "
+    "Background: Solid, pristine white studio background. "
+    "Lighting: Bright, even, soft studio lighting with no harsh shadows. "
+    "Composition: Centered, neatly arranged. "
+    "Quality: 8k resolution, photorealistic fabric textures. "
+    "STRICT NEGATIVE: No humans, no faces, no hands, no mannequins, no accessories. Apparel only."
 )
 
 def show_flatlay_ui():
     st.title(f"👕 衣装制作君 (v{VERSION})")
-    st.info("2026年最新モデル（Gemini 2.0 & Imagen 4.0）を使用して、最高精度の衣装アンカーを生成します。")
+    st.info("最速・万能モデル『Gemini 2.0 Flash』を使用して、確実に衣装アンカーを生成します。")
 
     # --- 2. APIクライアントの初期化 ---
+    # v1.5修正: 最も安定するデフォルト設定を使用
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
     # UIレイアウト
@@ -34,7 +38,6 @@ def show_flatlay_ui():
         st.divider()
         generate_btn = st.button("✨ 平置き画像を生成", type="primary")
         
-        # 診断ツール（念のため残しておきます）
         with st.expander("🛠 診断ツール"):
             if st.button("利用可能なモデルを再リストアップ"):
                 try:
@@ -54,29 +57,30 @@ def show_flatlay_ui():
             with col2:
                 st.subheader("2. 生成された衣装アンカー")
                 
-                with st.spinner("Gemini 2.0 が衣装を精密解析中..."):
-                    # --- Step 1: 解析 (v1.4修正: 利用可能な gemini-2.0-flash を使用) ---
-                    analysis_prompt = (
-                        f"Identify and analyze the {category} in this image. "
-                        "Describe the garment strictly: color, material texture, and silhouette. "
-                        "Focus on details for high-fidelity reconstruction."
-                    )
+                with st.spinner("Gemini 2.0 Flash が解析と生成を同時進行中..."):
                     
                     input_img_part = types.Part.from_bytes(data=uploaded_file.getvalue(), mime_type='image/jpeg')
                     
                     try:
-                        # 解析実行
+                        # --- Step 1: 解析 ---
+                        analysis_prompt = (
+                            f"Analyze the {category} in this image. "
+                            "Describe its color, fabric, patterns, and silhouette for an image generation task. "
+                            "Exclude any human or background details."
+                        )
+                        
                         analysis_res = client.models.generate_content(
                             model='gemini-2.0-flash', 
                             contents=[analysis_prompt, input_img_part]
                         )
                         clothing_desc = analysis_res.text
 
-                        # --- Step 2: 生成 (v1.4修正: 利用可能な imagen-4.0-generate-001 を使用) ---
-                        final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nDetails: {clothing_desc}"
+                        # --- Step 2: 生成 (v1.5修正: 最も確実な gemini-2.0-flash を採用) ---
+                        final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \n Garment details: {clothing_desc}"
                         
+                        # 
                         gen_response = client.models.generate_content(
-                            model='imagen-4.0-generate-001', 
+                            model='gemini-2.0-flash', 
                             contents=[final_gen_prompt],
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
@@ -94,9 +98,9 @@ def show_flatlay_ui():
                             final_img.save(buf, format="PNG")
                             st.download_button("📥 衣装アンカーを保存", buf.getvalue(), f"flat_{int(time.time())}.png", "image/png")
                         else:
-                            st.warning("Imagen 4.0からの応答が空です。")
+                            st.warning("生成に失敗しました。Gemini 2.0 の出力設定を確認しています...")
 
                     except Exception as e:
-                        st.error(f"エラー発生 (v1.4): {str(e)}")
+                        st.error(f"エラー発生 (v1.5): {str(e)}")
     else:
         st.write("サイドバーから画像をアップロードしてください。")
