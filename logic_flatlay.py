@@ -6,17 +6,17 @@ import io
 import time
 
 # --- 1. 定数定義 ---
-VERSION = "1.6"
+VERSION = "1.7"
 FLAT_LAY_PROMPT_BASE = (
-    "Professional flat lay photography of a standalone clothing item. "
-    "Top-down bird's eye view, centered on a solid pristine white background. "
-    "Soft studio lighting, 8k high resolution, realistic fabric textures. "
-    "STRICT RULE: No humans, no body parts, no mannequins. Apparel only."
+    "A professional flat lay photograph of a standalone clothing item. "
+    "Bird's eye view, perfectly centered on a clean white background. "
+    "High-end studio lighting, 8k resolution, visible fabric texture. "
+    "STRICT RULE: Only the clothing. No humans, no mannequins, no accessories."
 )
 
 def show_flatlay_ui():
     st.title(f"👕 衣装制作君 (v{VERSION})")
-    st.info("解析は『Gemini 2.0 Flash』、生成は専用の『Image Generation』モデルで分担実行します。")
+    st.info("解析（Gemini 2.0）と描画（Imagen 4.0）の『完全分業制』に移行しました。")
 
     # --- 2. APIクライアントの初期化 ---
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
@@ -44,16 +44,16 @@ def show_flatlay_ui():
             with col2:
                 st.subheader("2. 生成された衣装アンカー")
                 
-                with st.spinner("2.0 Flashが衣装を分析し、Image Genが描画中..."):
+                with st.spinner("Step 1: Gemini 2.0 が衣装を解析中..."):
                     
                     input_img_part = types.Part.from_bytes(data=uploaded_file.getvalue(), mime_type='image/jpeg')
                     
                     try:
-                        # --- Step 1: 解析 (分析のプロ: Gemini 2.0 Flashを使用) ---
+                        # --- Step 1: 解析 (会話モデル: Gemini 2.0 Flash) ---
                         analysis_prompt = (
                             f"Identify the {category} in this image. "
-                            "Strictly describe: color, fabric texture, and details. "
-                            "Ignore the person and background."
+                            "Describe only the garment: color, material, and patterns. "
+                            "Output a concise prompt for image generation."
                         )
                         
                         analysis_res = client.models.generate_content(
@@ -62,32 +62,34 @@ def show_flatlay_ui():
                         )
                         clothing_desc = analysis_res.text
 
-                        # --- Step 2: 生成 (画像出力のプロ: gemini-2.0-flash-exp-image-generationを使用) ---
-                        # v1.6修正: 画像生成に特化した専用モデルへ切り替え
-                        final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nDetails: {clothing_desc}"
-                        
-                        gen_response = client.models.generate_content(
-                            model='gemini-2.0-flash-exp-image-generation', 
-                            contents=[final_gen_prompt],
-                            config=types.GenerateContentConfig(
-                                response_modalities=['IMAGE'],
-                                safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
-                                image_config=types.ImageConfig(aspect_ratio="2:3")
-                            )
-                        )
-
-                        if gen_response.candidates and gen_response.candidates[0].content.parts:
-                            img_data = gen_response.candidates[0].content.parts[0].inline_data.data
-                            final_img = Image.open(io.BytesIO(img_data))
-                            st.image(final_img, use_container_width=True)
+                        with st.spinner("Step 2: Imagen 4.0 が高精度描画中..."):
+                            # --- Step 2: 生成 (画像専用モデル: Imagen 4.0) ---
+                            # v1.7修正: generate_content ではなく generate_image を使用
+                            final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nDetails: {clothing_desc}"
                             
-                            buf = io.BytesIO()
-                            final_img.save(buf, format="PNG")
-                            st.download_button("📥 衣装アンカーを保存", buf.getvalue(), f"flat_{int(time.time())}.png", "image/png")
-                        else:
-                            st.warning("画像生成モデルからの応答が空です。")
+                            # 
+                            gen_response = client.models.generate_image(
+                                model='imagen-4.0-generate-001', 
+                                prompt=final_gen_prompt,
+                                config=types.GenerateImageConfig(
+                                    aspect_ratio="2:3",
+                                    safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')],
+                                    output_mime_type='image/png'
+                                )
+                            )
+
+                            if gen_response.generated_images:
+                                # v1.7修正: generate_image の戻り値形式に合わせて取得
+                                img_bytes = gen_response.generated_images[0].image.image_bytes
+                                final_img = Image.open(io.BytesIO(img_bytes))
+                                st.image(final_img, use_container_width=True)
+                                
+                                st.download_button("📥 衣装アンカーを保存", img_bytes, f"flat_{int(time.time())}.png", "image/png")
+                            else:
+                                st.warning("Imagen 4.0 から画像が返されませんでした。")
 
                     except Exception as e:
-                        st.error(f"エラー発生 (v1.6): {str(e)}")
+                        st.error(f"エラー発生 (v1.7): {str(e)}")
+                        st.info("APIの呼び出しメソッドを最新の画像専用方式に切り替えました。")
     else:
         st.write("サイドバーから画像をアップロードしてください。")
