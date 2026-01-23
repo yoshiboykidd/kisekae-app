@@ -9,8 +9,8 @@ import random
 import cv2
 import numpy as np
 
-# --- 1. システム設定 (ver 2.71: Hairstyle List Update) ---
-VERSION = "2.71"
+# --- 1. システム設定 (ver 2.72: Restore Pose Distribution) ---
+VERSION = "2.72"
 st.set_page_config(page_title=f"AI KISEKAE Manager v{VERSION}", layout="wide")
 
 # セッション状態の初期化
@@ -21,7 +21,7 @@ for key in ["generated_images", "error_log", "anchor_part", "wardrobe_task", "cu
         elif key in ["anchor_part", "wardrobe_task", "final_bg_prompt"]: st.session_state[key] = None
         else: st.session_state[key] = []
 
-# --- 髪型定義マップ (指定順序に変更・追加) ---
+# --- 髪型定義マップ (指定順序) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -32,7 +32,7 @@ HAIR_STYLES = {
     "ストレート": "sleek long straight hair"
 }
 
-# --- 髪色定義マップ (変更なし) ---
+# --- 髪色定義マップ ---
 HAIR_COLORS = {
     "元画像のまま": "original hair color from IMAGE 1",
     "ナチュラルブラック": "natural black hair",
@@ -43,24 +43,28 @@ HAIR_COLORS = {
     "ハニーブロンド": "bright honey blonde hair"
 }
 
-# ポーズプール (ver 2.66 準拠)
+# ポーズプール (ver 2.66 黄金律準拠)
 STAND_PROMPTS = [
     "Full body portrait, standing naturally, hand gently touching hair, looking away",
     "Full body portrait, leaning against a wall, arms casually crossed",
     "Full body portrait, walking slowly, looking back over shoulder",
-    "Full body portrait, standing with weight on one leg, one hand on hip"
+    "Full body portrait, standing with weight on one leg, one hand on hip",
+    "Full body portrait, standing by a railing, looking out thoughtfully",
+    "Full body portrait, standing with hands behind back, looking at camera"
 ]
 SIT_PROMPTS = [
     "Full body portrait, relaxed sitting pose on a sofa, looking at camera",
     "Full body portrait, sitting sideways on a chair, leaning on the backrest",
-    "Full body portrait, sitting gracefully on steps, hands resting in lap"
+    "Full body portrait, sitting gracefully on steps, hands resting in lap",
+    "Full body portrait, casual sitting pose on a plush surface, leaning back on hands",
+    "Full body portrait, sitting on the edge of a bed, looking over shoulder"
 ]
 
-# カテゴリー定義 (ver 2.66 準拠)
+# カテゴリー定義 (ver 2.66 黄金律準拠)
 CATEGORIES = {
     "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin, soft daylight"},
     "2. 水着（リゾート）": {"en": "High-end stylish resort swimwear", "back_prompt": "healthy skin glow, vibrant summer lighting"},
-    "3. 部屋着（リラックス）": {"en": "Elegant silk night-fashion, satin camisole-style", "back_prompt": "ultra-soft focus, warm rim lighting, soft beauty face light"},
+    "3. 部屋着（リラックス）": {"en": "Elegant silk night-fashion, satin camisole-style", "back_prompt": "ultra-soft focus, warm rim lighting"},
     "4. オフィス（スーツ）": {"en": "Elegant business professional attire", "back_prompt": "sharp corporate lighting, professional studio look"},
     "5. コスチューム": {"en": "High-quality themed costume, professional uniform", "back_prompt": "meticulous details, professional strobe"},
     "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting, soft facial fill-light"}
@@ -89,12 +93,12 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
     return "RETRY_FAILED"
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
-    """【絶対ルール：ver 2.70 継承】顔固定を最上位に置き、髪型・髪色を反映"""
+    """【絶対ルール：ver 2.66 継承】顔固定を最優先"""
     cat_info = CATEGORIES[cat_key]
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match. Maintain the original skin tone regardless of hair color.\n"
-        f"2. HAIR CUSTOMIZATION: Style: {hair_style_en}, Color: {hair_color_en}. Integrate naturally without altering facial features.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match. Maintain the original skin tone.\n"
+        f"2. HAIR CUSTOMIZATION: Style: {hair_style_en}, Color: {hair_color_en}. Integrate naturally.\n"
         f"3. PHYSICAL IDENTITY (IMAGE 1): [FIXED_IDENTITY] Match the exact body mass and curves of IMAGE 1.\n"
         f"4. POSE & COMPOSITION: {pose_text}. 85mm portrait lens.\n"
         f"5. WARDROBE (IMAGE 2): {wardrobe_task}\n"
@@ -117,15 +121,18 @@ with st.sidebar:
     if ref_img: st.image(ref_img, use_container_width=True)
     st.divider()
     cloth_main = st.selectbox("衣装カテゴリー", list(CATEGORIES.keys()))
-    cloth_detail = st.text_input("衣装仕様書", placeholder="例：シルク、サテン")
+    cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン")
     
-    # 髪型アレンジ (指定順序で表示)
     hair_style_choice = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
     hair_color_choice = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys()))
     
     st.divider()
     bg_text = st.text_input("場所", "高級ホテルの部屋")
     time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
+    
+    # --- 【復元】生成配分設定 ---
+    pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
+    
     run_btn = st.button("✨ 4枚一括生成")
 
 # 共通 identity_part
@@ -137,8 +144,14 @@ if run_btn and source_img:
     st.session_state.generated_images = [None] * 4
     time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "warm sunset glow", "夜 (Night)": "night lights"}
     st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
-    st.session_state.current_pose_texts = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
-    random.shuffle(st.session_state.current_pose_texts)
+    
+    # --- 【復元】配分ロジック ---
+    if pose_pattern == "立ち3:座り1":
+        poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
+    else:
+        poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
+    random.shuffle(poses)
+    st.session_state.current_pose_texts = poses
 
     status_container = st.empty()
     progress_bar = st.progress(0)
@@ -157,7 +170,7 @@ if run_btn and source_img:
 
     # Step 2: 4枚生成
     for i, p_txt in enumerate(st.session_state.current_pose_texts):
-        with status_container.container(): st.info(f"🎨 Step 2/2: 顔面固定 + ヘアメイク中 ({i+1}/4)...")
+        with status_container.container(): st.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
         img_res = generate_image_by_text(
             client, p_txt, identity_part, st.session_state.anchor_part, 
             st.session_state.wardrobe_task, st.session_state.final_bg_prompt, 
@@ -177,7 +190,6 @@ if any(st.session_state.generated_images):
             img = st.session_state.generated_images[i]
             if img:
                 st.image(img, use_container_width=True)
-                # 個別撮り直しボタン
                 if st.button(f"🔄 撮り直し #{i+1}", key=f"re_{i}"):
                     with st.spinner("再生成中..."):
                         res = generate_image_by_text(
