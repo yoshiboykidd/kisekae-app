@@ -6,7 +6,7 @@ import io
 import time
 
 # --- 1. 定数定義 ---
-VERSION = "1.1"
+VERSION = "1.2"
 FLAT_LAY_PROMPT_BASE = (
     "Professional flat lay photography of apparel, captured from a direct top-down bird's eye view. "
     "The clothing is organized neatly on a clean, solid white studio background. "
@@ -19,12 +19,9 @@ def show_flatlay_ui():
     st.title(f"👕 衣装制作君 (v{VERSION})")
     st.info("写真から衣装のみを抽出し、KISEKAE用の「衣装設計図（平置き画像）」を生成します。")
 
-    # --- APIクライアントの初期化 (v1.1修正: api_versionを指定) ---
-    # 404エラー回避のため、明示的に v1beta を指定します
-    client = genai.Client(
-        api_key=st.secrets["GEMINI_API_KEY"],
-        http_options={'api_version': 'v1beta'}
-    )
+    # --- 2. APIクライアントの初期化 (v1.2修正: 標準設定に戻す) ---
+    # 逆に明示的な指定を外すことで、SDKに最適なエンドポイントを自動選択させます
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
     # UIレイアウト
     with st.sidebar:
@@ -49,7 +46,8 @@ def show_flatlay_ui():
                 st.subheader("2. 生成された衣装アンカー")
                 
                 with st.spinner("Geminiが衣装を解析・再構築中..."):
-                    # --- Step 1: 衣装の詳細を言語化 (v1.1修正: models/ プレフィックスを付与) ---
+                    # --- Step 1: 衣装の詳細を言語化 (v1.2修正: ショートハンド名を使用) ---
+                    # SDKが内部で models/ を補完するため、ここではモデル名のみを指定します
                     analysis_prompt = (
                         f"Identify and analyze the {category} in this image. "
                         "Describe the garment strictly: exact color, fabric material (satin, cotton, silk, etc.), "
@@ -61,18 +59,18 @@ def show_flatlay_ui():
                     input_img_part = types.Part.from_bytes(data=uploaded_file.getvalue(), mime_type='image/jpeg')
                     
                     try:
-                        # 解析実行
+                        # 解析実行 (モデル名を gemini-1.5-flash に戻す)
                         analysis_res = client.models.generate_content(
-                            model='models/gemini-1.5-flash', 
+                            model='gemini-1.5-flash', 
                             contents=[analysis_prompt, input_img_part]
                         )
                         clothing_desc = analysis_res.text
 
-                        # --- Step 2: 平置き画像を生成 (v1.1修正: models/ プレフィックスを付与) ---
+                        # --- Step 2: 平置き画像を生成 (v1.2修正: ショートハンド名を使用) ---
                         final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nClothing details: {clothing_desc}"
                         
                         gen_response = client.models.generate_content(
-                            model='models/imagen-3.0-generate-001', 
+                            model='imagen-3.0-generate-001', 
                             contents=[final_gen_prompt],
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
@@ -97,10 +95,12 @@ def show_flatlay_ui():
                                 mime="image/png"
                             )
                         else:
-                            st.warning("画像の生成に失敗しました。プロンプトや安全設定を確認してください。")
+                            st.warning("画像の生成に失敗しました。")
 
                     except Exception as e:
-                        st.error(f"システムエラーが発生しました: {str(e)}")
-                        st.info("404が出る場合は、APIキーが最新モデル(Imagen 3)の権限を持っているか確認してください。")
+                        # エラー内容をより詳細に表示
+                        st.error(f"エラー内容: {str(e)}")
+                        if "404" in str(e):
+                            st.info("APIキーの権限、またはモデル名が現在のリージョンで有効か確認してください。")
     else:
         st.write("サイドバーから画像をアップロードしてください。")
