@@ -2,19 +2,29 @@ import streamlit as st
 import logic_kisekae
 import logic_flatlay
 
-st.set_page_config(page_title="AI KISEKAE Manager Pro", layout="wide")
+# --- 1. アプリ全体の基本設定 ---
+st.set_page_config(
+    page_title="AI KISEKAE Manager Pro",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("AI KISEKAE Manager")
+# --- 2. サイドバーでメニュー切り替え ---
+# ここで選んだものだけが実行されるため、サイドバーが混ざりません
+st.sidebar.title("🚀 NAVIGATION")
+mode = st.sidebar.radio(
+    "機能を選択してください",
+    ["✨ AI KISEKAE (Main)", "👕 平置きアンカー生成"],
+    index=0
+)
 
-# タブの作成
-tab1, tab2 = st.tabs(["✨ AI KISEKAE (Main)", "👕 平置きアンカー生成"])
+st.sidebar.divider() # 区切り線
 
-with tab1:
-    # この中で呼び出される logic_kisekae 内の st.sidebar は
-    # tab1 が選択されている時だけ表示されます
+# --- 3. 選択された機能だけを呼び出す ---
+if mode == "✨ AI KISEKAE (Main)":
+    # KISEKAE側のサイドバーとメイン画面が表示される
     logic_kisekae.show_kisekae_ui()
 
-with tab2:
-    # この中で呼び出される logic_flatlay 内の st.sidebar は
-    # tab2 が選択されている時だけ表示されます
+elif mode == "👕 平置きアンカー生成":
+    # 平置き側のサイドバーとメイン画面が表示される
     logic_flatlay.show_flatlay_ui()
