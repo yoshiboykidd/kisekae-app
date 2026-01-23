@@ -9,36 +9,33 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. パスワード認証ロジック ---
+# --- 2. パスワード認証ロジック (確実なリフレッシュ版) ---
 def check_password():
-    """パスワードが正しいかチェックし、結果を返す"""
-    def password_entered():
-        if st.session_state["password"] == "karin10":
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # セッションからパスワードを削除
-        else:
-            st.session_state["password_correct"] = False
-
+    """パスワードをチェックし、成功したら画面を即座に更新する"""
+    
     if "password_correct" not in st.session_state:
-        # 初回訪問時
-        st.text_input(
-            "Enter Password", type="password", on_change=password_entered, key="password"
-        )
-        return False
-    elif not st.session_state["password_correct"]:
-        # パスワードが間違っている場合
-        st.text_input(
-            "Enter Password", type="password", on_change=password_entered, key="password"
-        )
-        st.error("😕 Password incorrect")
-        return False
-    else:
-        # パスワードが正しい場合
+        st.session_state["password_correct"] = False
+
+    # すでに認証済みの場合はTrueを返す
+    if st.session_state["password_correct"]:
         return True
+
+    # ログイン画面の表示
+    st.title("🔐 Authentication")
+    password_input = st.text_input("Enter Password", type="password")
+    
+    if st.button("Login"):
+        if password_input == "karin10":
+            st.session_state["password_correct"] = True
+            st.rerun()  # ★ここが重要：画面を強制的に書き換える
+        else:
+            st.error("😕 Password incorrect")
+    
+    return False
 
 # --- 3. メイン処理 ---
 if check_password():
-    # パスワードが通った後だけ、以下のナビゲーションと機能が表示される
+    # パスワードが正しい場合のみ、以下のUIが表示される
     
     st.sidebar.title("🚀 NAVIGATION")
     mode = st.sidebar.radio(
