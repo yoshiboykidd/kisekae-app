@@ -5,18 +5,20 @@ from PIL import Image
 import io
 import time
 
-# --- 1. 定数定義（検閲回避と高品質化のための黄金律） ---
+# --- 1. 定数定義（プロフェッショナルな平置き写真のための黄金律） ---
 FLAT_LAY_PROMPT_BASE = (
-    "Professional flat lay photography of apparel, top-down view, "
-    "organized neatly on a clean neutral background, soft natural studio lighting, 8k resolution. "
-    "NO humans, NO body parts, NO faces. Just the clothing item itself."
+    "Professional flat lay photography of apparel, captured from a direct top-down bird's eye view. "
+    "The clothing is organized neatly on a clean, solid white studio background. "
+    "Soft, even natural studio lighting with minimal shadows. 8k high-definition texture. "
+    "STRICT RULE: No humans, no mannequins, no body parts, no faces. "
+    "Only the standalone clothing item itself."
 )
 
 def show_flatlay_ui():
-    st.title("👕 衣装制作君")
-    st.info("写真から衣装のみを抽出し、KISEKAE用の「衣装設計図（平置き画像）」を生成します。")
+    st.title("👕 衣装制作君（衣装アンカー生成）")
+    st.info("人物写真から衣装のみを抽出し、KISEKAE用の「衣装設計図（平置き画像）」を生成します。")
 
-    # APIクライアントの初期化
+    # APIクライアントの初期化（最新の google-genai SDK 準拠）
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
     # UIレイアウト
@@ -24,7 +26,6 @@ def show_flatlay_ui():
         st.header("📸 抽出設定")
         uploaded_file = st.file_uploader("衣装の参照画像をアップロード", type=['jpg', 'png', 'jpeg'], key="flat_up")
         
-        # 衣服カテゴリー（AI KISEKAEの定義に準拠）
         category = st.selectbox("アイテムの種類", [
             "Casual fashion", "Night-fashion", "Satin slip", "Silk camisole", "Business suit", "Swimwear"
         ])
@@ -43,32 +44,30 @@ def show_flatlay_ui():
                 st.subheader("2. 生成された衣装アンカー")
                 
                 with st.spinner("Geminiが衣装を解析・再構築中..."):
-                    # Step 1: 画像から衣服の詳細な特徴（素材、柄、形状）を言語化
-                    # 人物の体型やポーズの情報を「捨てる」ための重要なステップ
+                    # --- Step 1: 衣装の詳細を言語化（Gemini 1.5 Flashを使用） ---
                     analysis_prompt = (
-                        f"Analyze the {category} in this image. "
-                        "Focus strictly on apparel details: exact color, fabric texture, patterns, "
-                        "neckline shape, and sleeve length. "
-                        "Exclude all mentions of the person, pose, or body shape. "
-                        "Output only a detailed description for image generation."
+                        f"Identify and analyze the {category} in this image. "
+                        "Describe the garment strictly: exact color, fabric material (satin, cotton, silk, etc.), "
+                        "patterns, collar shape, buttons, and sleeve details. "
+                        "Ignore the person, their pose, and the background. "
+                        "Output only the detailed physical description of the garment."
                     )
                     
                     input_img_part = types.Part.from_bytes(data=uploaded_file.getvalue(), mime_type='image/jpeg')
                     
                     try:
-                        # 衣服の解析（Gemini 1.5 Flashを使用）
+                        # 解析実行
                         analysis_res = client.models.generate_content(
                             model='gemini-1.5-flash',
                             contents=[analysis_prompt, input_img_part]
                         )
                         clothing_desc = analysis_res.text
 
-                        # Step 2: 解析結果を元に平置き画像を生成
-                        final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nItem details: {clothing_desc}"
+                        # --- Step 2: 平置き画像を生成（Imagen 3を使用） ---
+                        final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nClothing details: {clothing_desc}"
                         
-                        # 画像生成（Gemini 3 Pro / Imagen 3 系のモデルを使用）
                         gen_response = client.models.generate_content(
-                            model='gemini-3-pro-image-preview',
+                            model='imagen-3.0-generate-001', # 404エラーを防ぐ最新の指定方法
                             contents=[final_gen_prompt],
                             config=types.GenerateContentConfig(
                                 response_modalities=['IMAGE'],
@@ -81,7 +80,6 @@ def show_flatlay_ui():
                             img_data = gen_response.candidates[0].content.parts[0].inline_data.data
                             final_img = Image.open(io.BytesIO(img_data))
                             
-                            # プレビュー表示
                             st.image(final_img, use_container_width=True)
                             
                             # ダウンロードボタン
@@ -94,9 +92,10 @@ def show_flatlay_ui():
                                 mime="image/png"
                             )
                         else:
-                            st.error("画像の生成に失敗しました（セーフティフィルタ等の影響）")
+                            st.warning("画像の生成に失敗しました。プロンプトや安全設定を確認してください。")
 
                     except Exception as e:
-                        st.error(f"エラーが発生しました: {str(e)}")
+                        st.error(f"システムエラーが発生しました: {str(e)}")
+                        st.info("requirements.txtが更新され、AppがRebootされているか確認してください。")
     else:
         st.write("サイドバーから画像をアップロードしてください。")
