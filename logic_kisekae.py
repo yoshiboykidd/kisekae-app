@@ -1,12 +1,12 @@
 import streamlit as st
 from google import genai
-from google.genai import types  # Part等の基本データ型には使用
+from google.genai import types
 from PIL import Image
 import io
 import time
 import random
 
-# --- 1. 絶対不変の定義データ (黄金律 & 髪型順序) ---
+# --- 1. 定義データ (黄金律 & 髪型順序厳守) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -48,15 +48,11 @@ CATEGORIES = {
     "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting, soft facial fill-light"}
 }
 
-# --- 2. 安定化生成エンジン (辞書型設定による Attribute Error 回避) ---
+# --- 2. 生成コア関数 (辞書型設定で Attribute Error を回避) ---
 def generate_with_retry(client, contents, prompt, aspect_ratio="2:3", max_retries=2):
-    """
-    クラス名(ImageGenerationConfig等)を使わず辞書で設定を渡すことで、
-    SDKのバージョン差異によるクラッシュを完全に回避する
-    """
     for attempt in range(max_retries + 1):
         try:
-            # 辞書形式で設定を構築（最も互換性が高い）
+            # 辞書形式で設定を渡すことでSDKバージョンの差異を無視する
             gen_config = {
                 "response_modalities": ["IMAGE"],
                 "image_generation_config": {
@@ -79,7 +75,8 @@ def generate_with_retry(client, contents, prompt, aspect_ratio="2:3", max_retrie
             return "SAFETY_BLOCK"
         except Exception as e:
             if "503" in str(e) and attempt < max_retries:
-                time.sleep(2); continue
+                time.sleep(2)
+                continue
             return str(e)
     return "RETRY_FAILED"
 
@@ -106,7 +103,7 @@ def show_kisekae_ui():
     if "current_pose_texts" not in st.session_state:
         st.session_state.current_pose_texts = [None] * 4
 
-    st.header("✨ AI KISEKAE Main System (v2.84)")
+    st.header("✨ AI KISEKAE Main System (v2.85)")
     
     with st.sidebar:
         source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="kise_src")
@@ -135,7 +132,8 @@ def show_kisekae_ui():
         random.shuffle(poses)
         st.session_state.current_pose_texts = poses
 
-        status = st.empty(); progress = st.progress(0)
+        status = st.empty()
+        progress = st.progress(0)
 
         # Step 1: 衣装アンカー
         status.info("🕒 Step 1/2: 衣装設計図（アンカー）を抽出中...")
@@ -148,4 +146,36 @@ def show_kisekae_ui():
             st.session_state.wardrobe_task = f"Strictly replicate the design from IMAGE 2. {cloth_detail}."
             
             # Step 2: 4枚生成
-            identity_part = types.Part.from_bytes(data=source_img.getvalue(),
+            identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
+            for i in range(4):
+                status.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
+                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
+                if isinstance(res, bytes):
+                    st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+                progress.progress((i+1)/4)
+            status.empty()
+            st.rerun()
+        else:
+            st.error(f"アンカー生成に失敗しました: {res_data}")
+
+    # 画像表示エリア
+    if any(img is not None for img in st.session_state.generated_images):
+        cols = st.columns(2)
+        for i in range(4):
+            with cols[i % 2]:
+                img = st.session_state.generated_images[i]
+                if img:
+                    st.image(img, use_container_width=True)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG")
+                        st.download_button("💾 保存", buf.getvalue(), f"img_{i+1}.jpg", "image/jpeg", key=f"dl_{i}")
+                    with c2:
+                        if st.button("🔄 撮り直し", key=f"re_{i}"):
+                            with st.spinner("再生成中..."):
+                                id_p = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
+                                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], id_p, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
+                                if isinstance(res, bytes):
+                                    st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+                                    st.rerun()
