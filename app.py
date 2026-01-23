@@ -1,37 +1,27 @@
 import streamlit as st
-import os
-import sys
-
-# --- 強制パス設定（決定版） ---
-# app.pyがある場所にある 'modules' フォルダを、Pythonの検索リストの最優先（0番目）に追加します
-modules_path = os.path.join(os.path.dirname(__file__), "modules")
-if modules_path not in sys.path:
-    sys.path.insert(0, modules_path)
+# 同じ階層（ルート）にあるファイルを直接インポート
+import logic_kisekae
+import logic_flatlay
 
 # --- 1. アプリ全体の基本設定 ---
+# 注: st.set_page_config はアプリ内で最初に一度だけ呼び出す必要があります
 st.set_page_config(
     page_title="AI KISEKAE Manager Pro",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# --- 2. モジュールのインポート ---
-# フォルダ名を介さず、ファイル名を直接指定して読み込みます
-try:
-    import logic_kisekae
-    import logic_flatlay
-except Exception as e:
-    st.error(f"【エラー】ファイルが読み込めませんでした。GitHubの構成を再確認してください。: {e}")
-    st.stop()
-
-# --- 3. 画面構成 ---
+# --- 2. 画面構成 ---
 st.title("AI KISEKAE Manager")
 
+# タブで機能を分離
+# タブをクリックするだけで、中身のプログラムが切り替わります
 tab1, tab2 = st.tabs(["✨ AI KISEKAE (Main)", "👕 平置きアンカー生成"])
 
 with tab1:
-    # 'modules.' を外して呼び出し
+    # logic_kisekae.py の中にある show_kisekae_ui 関数を実行
     logic_kisekae.show_kisekae_ui()
 
 with tab2:
-    # 'modules.' を外して呼び出し
+    # logic_flatlay.py の中にある show_flatlay_ui 関数を実行
     logic_flatlay.show_flatlay_ui()
