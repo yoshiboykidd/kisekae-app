@@ -2,9 +2,9 @@ import streamlit as st
 import logic_kisekae
 import logic_flatlay
 
-# --- 1. アプリ全体の基本設定 ---
+# --- 1. アプリ全体の基本設定 (ver 2.75) ---
 st.set_page_config(
-    page_title="AI KISEKAE Manager Pro v2.74",
+    page_title="AI KISEKAE Manager Pro v2.75",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -17,7 +17,7 @@ def check_password():
     if st.session_state["password_correct"]:
         return True
 
-    st.title("🔐 Authentication")
+    st.title("🔐 AI KISEKAE Authentication")
     password_input = st.text_input("Enter Password", type="password")
     
     if st.button("Login"):
@@ -30,7 +30,7 @@ def check_password():
 
 # --- 3. メイン処理 ---
 if check_password():
-    st.sidebar.title("🚀 NAVIGATION")
+    st.sidebar.title(f"🚀 NAVI (v2.75)")
     mode = st.sidebar.radio(
         "機能を選択してください",
         ["✨ AI KISEKAE (Main)", "👕 平置きアンカー生成"],
