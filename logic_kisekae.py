@@ -48,26 +48,27 @@ CATEGORIES = {
     "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting, soft facial fill-light"}
 }
 
-# --- 2. 生成コア関数 (辞書型設定で Attribute Error を回避) ---
+# --- 2. 生成コア関数 (SDK 0.6.0 バリデーション完全突破版) ---
 def generate_with_retry(client, contents, prompt, aspect_ratio="2:3", max_retries=2):
     for attempt in range(max_retries + 1):
         try:
-            # 辞書形式で設定を渡すことでSDKバージョンの差異を無視する
-            gen_config = {
-                "response_modalities": ["IMAGE"],
-                "image_generation_config": {
-                    "aspect_ratio": aspect_ratio,
-                    "number_of_images": 1
-                },
-                "safety_settings": [
-                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}
-                ]
-            }
-            
+            # 辞書型（{}）を使わず、厳密にクラス定義で構築
             response = client.models.generate_content(
                 model='gemini-3-pro-image-preview',
                 contents=contents + [prompt],
-                config=gen_config
+                config=types.GenerateContentConfig(
+                    response_modalities=['IMAGE'],
+                    image_generation_config=types.ImageGenerationConfig(
+                        aspect_ratio=aspect_ratio,
+                        number_of_images=1
+                    ),
+                    safety_settings=[
+                        types.SafetySetting(
+                            category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                            threshold='BLOCK_NONE'
+                        )
+                    ]
+                )
             )
             
             if response.candidates and response.candidates[0].content.parts:
@@ -81,14 +82,13 @@ def generate_with_retry(client, contents, prompt, aspect_ratio="2:3", max_retrie
     return "RETRY_FAILED"
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
-    """黄金律に基づくプロンプト構築"""
     cat_info = CATEGORIES[cat_key]
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1. 100% identity match.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate the EXACT facial structure of IMAGE 1.\n"
         f"2. HAIR CUSTOMIZATION: Style: {hair_style_en}, Color: {hair_color_en}.\n"
-        f"3. PHYSICAL FIDELITY: [STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK]. Match body mass of IMAGE 1.\n"
-        f"4. POSE & COMPOSITION: {pose_text}. 85mm portrait lens.\n"
+        f"3. PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK. Match IMAGE 1.\n"
+        f"4. POSE & COMPOSITION: {pose_text}. 85mm lens.\n"
         f"5. WARDROBE (IMAGE 2): {wardrobe_task}\n"
         f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
     )
@@ -103,7 +103,7 @@ def show_kisekae_ui():
     if "current_pose_texts" not in st.session_state:
         st.session_state.current_pose_texts = [None] * 4
 
-    st.header("✨ AI KISEKAE Main System (v2.85)")
+    st.header("✨ AI KISEKAE Main System (v2.86)")
     
     with st.sidebar:
         source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="kise_src")
@@ -124,7 +124,6 @@ def show_kisekae_ui():
         time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "warm sunset glow", "夜 (Night)": "night lights"}
         st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
         
-        # ポーズ決定
         if pose_pattern == "立ち3:座り1":
             poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
         else:
@@ -143,7 +142,7 @@ def show_kisekae_ui():
         
         if isinstance(res_data, bytes):
             st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
-            st.session_state.wardrobe_task = f"Strictly replicate the design from IMAGE 2. {cloth_detail}."
+            st.session_state.wardrobe_task = f"Strictly apply the design from IMAGE 2. {cloth_detail}."
             
             # Step 2: 4枚生成
             identity_part = types.Part.from_bytes(data=source_img.getvalue(), mime_type='image/jpeg')
@@ -158,7 +157,7 @@ def show_kisekae_ui():
         else:
             st.error(f"アンカー生成に失敗しました: {res_data}")
 
-    # 画像表示エリア
+    # 画像表示
     if any(img is not None for img in st.session_state.generated_images):
         cols = st.columns(2)
         for i in range(4):
