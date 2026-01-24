@@ -38,7 +38,6 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
-# 日本語のみのコピー用例文
 LOCATION_EXAMPLES = """
 【コピー用例文】
 ・街角のオープンカフェ
@@ -85,7 +84,7 @@ def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardro
     )
     return generate_with_retry(client, [identity_part, anchor_part], prompt)
 
-# --- 3. UI メイン処理 ---
+# --- 3. UI メイン処理 (並び順修正版) ---
 def show_kisekae_ui():
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     
@@ -97,7 +96,7 @@ def show_kisekae_ui():
     st.header("✨ AI KISEKAE Classic (v2.94-J)")
     
     with st.sidebar:
-        # アップローダー
+        # 1. キャスト (IMAGE 1)
         src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
         if src_img:
             st.session_state.source_bytes = src_img.getvalue()
@@ -105,31 +104,43 @@ def show_kisekae_ui():
         
         st.divider()
 
+        # 2. 衣装 (IMAGE 2)
         ref_img = st.file_uploader("衣装 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
         if ref_img:
             st.session_state.ref_bytes = ref_img.getvalue()
             st.image(ref_img, use_container_width=True)
 
         st.divider()
-        
-        # --- ロケーション設定 ---
+
+        # 3. カテゴリー
+        cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
+
+        # 4. 衣装詳細
+        cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、光沢感")
+
+        st.divider()
+
+        # 5. 髪型
+        hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
+
+        # 6. 髪色
+        hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
+
+        st.divider()
+
+        # 7. ロケーション (自由記載 + 時間帯)
         st.subheader("📍 ロケーション")
         bg_text = st.text_input("場所を入力", "高級ホテル")
-        st.caption("※下の例文をコピーして使用できます")
-        st.text(LOCATION_EXAMPLES) 
-        
         time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
-        
+        st.caption("【コピー用例文】")
+        st.text(LOCATION_EXAMPLES)
+
         st.divider()
-        
+
+        # 8. 生成比率
         pose_pattern = st.radio("生成比率", ["立ち3:座り1", "立ち2:座り2"])
         
         st.divider()
-        
-        cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
-        cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、光沢感")
-        hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
-        hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
         
         run_btn = st.button("✨ 4枚一括生成", type="primary")
 
@@ -147,7 +158,7 @@ def show_kisekae_ui():
         st.session_state.current_pose_texts = poses
 
         status = st.empty(); progress = st.progress(0)
-        status.info("🕒 アンカー作成中...")
+        status.info("🕒 アンカー抽出中...")
         
         contents = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')] if st.session_state.ref_bytes else []
         res_data = generate_with_retry(client, contents, f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. 1:1 aspect ratio.")
