@@ -5,66 +5,71 @@ from PIL import Image
 import io
 import time
 
-# --- 1. 定数定義 (v2.3: 除外指示の反映を強化) ---
-VERSION = "2.3"
+# --- 1. 定数定義 (v2.4: 対象物の分離精度を強化) ---
+VERSION = "2.4"
 FLAT_LAY_PROMPT_BASE = (
-    "A high-end professional fashion catalog flat lay photography of a SINGLE standalone garment. "
-    "Shot from a direct top-down bird's-eye view, perfectly centered on a seamless, solid pure white studio background (#FFFFFF). "
-    "High-key studio lighting, no harsh shadows, extremely sharp focus. "
-    "8k resolution, photorealistic fabric textures. "
-    "STRICT RULE: Only the selected clothing. NO humans, NO body parts, NO mannequins."
+    "A high-end professional fashion catalog flat lay photography. "
+    "Shot from a direct top-down bird's-eye view, centered on a seamless pure white studio background. "
+    "High-key studio lighting, extremely sharp focus, 8k resolution. "
+    "STRICT RULE: Only the specified target items are present. No humans, no mannequins."
 )
 
 def show_flatlay_ui():
     st.header(f"👕 洋服アンカー制作 (v{VERSION})")
-    st.info("特定のアイテム（カバン・靴・装飾品など）を除外して、服だけを抽出できます。")
+    st.info("「残したいもの」と「消したいもの」を明記することで、色が似ていても正確に分離します。")
     
-    # APIクライアントの初期化
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
     if "flat_ref_bytes" not in st.session_state: 
         st.session_state.flat_ref_bytes = None
 
     with st.sidebar:
-        st.header("📸 抽出・除外設定")
+        st.header("📸 抽出・分離設定")
         ref_img = st.file_uploader("元の衣装画像", type=['png', 'jpg', 'jpeg'], key="f_src")
         
         if ref_img:
             st.session_state.flat_ref_bytes = ref_img.getvalue()
             st.image(ref_img, caption="解析対象", use_container_width=True)
         
-        # ★追加：何を除外するかを指示する入力欄
-        exclude_text = st.text_input(
-            "除外したいもの", 
-            placeholder="例：カバン、靴、帽子、ネックレス",
-            help="画像に写っているが、アンカー画像には含めたくないものを入力してください。"
+        st.divider()
+        st.write("👇 **ここが重要です** 👇")
+        # ★変更点：ポジティブ（残す）とネガティブ（消す）を分離
+        keep_items = st.text_input(
+            "🟢 残したいもの（主役）", 
+            placeholder="例：白いニットワンピース、薄茶色のブーツ",
+            help="アンカー画像に必要なアイテムをすべて書いてください。"
+        )
+        remove_items = st.text_input(
+            "🔴 消したいもの（除外）", 
+            placeholder="例：茶色のカバン、背景の雑貨",
+            help="色が似ていても、ここに書かれたものは強制的に削除します。"
         )
         
-        category = st.selectbox("アイテムの種類", [
-            "Casual fashion", "Night-fashion", "Satin slip", "Silk camisole", "Business suit", "Swimwear"
-        ])
+        category = st.selectbox("メインアイテムの種類（参考）", ["Casual fashion", "Business suit", "Swimwear", "Other"])
         
         st.divider()
-        run_btn = st.button("🚀 特定アイテムのみ精密生成", type="primary")
+        run_btn = st.button("🚀 精密分離で生成を実行", type="primary", disabled=not (keep_items and remove_items))
+        if not (keep_items and remove_items) and ref_img:
+            st.caption("※「残したいもの」と「消したいもの」の両方を入力してください。")
 
     if run_btn and st.session_state.flat_ref_bytes:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("1. AI解析結果")
-            with st.spinner("指定アイテムを除外してスキャン中..."):
+            st.subheader("1. AI解析結果（分離認識）")
+            with st.spinner(f"「{keep_items}」と「{remove_items}」を識別分離中..."):
                 try:
                     input_img_part = types.Part.from_bytes(
                         data=st.session_state.flat_ref_bytes, 
                         mime_type='image/jpeg'
                     )
                     
-                    # 除外指示を解析プロンプトに組み込む
+                    # 解析プロンプト：両者を明確に区別して認識させる
                     analysis_prompt = (
-                        f"Analyze the {category} in this image. "
-                        f"STRICT RULE: COMPLETELY IGNORE and EXCLUDE these items: {exclude_text}. "
-                        "Focus only on the main garment. Describe its material, color, and structure "
-                        "for a professional 8k flat-lay reconstruction."
+                        f"TASK: Isolate and analyze ONLY the '{keep_items}' from this image. "
+                        f"CRITICAL DISTINCTION: You must differentiate the target '{keep_items}' from the excluded '{remove_items}', even if their colors are similar or overlapping. "
+                        f"Completely ignore the material and shape of '{remove_items}'. "
+                        f"Describe the visual details (color, texture, shape) of ONLY the '{keep_items}' for reconstruction."
                     )
                     
                     analysis_res = client.models.generate_content(
@@ -73,21 +78,22 @@ def show_flatlay_ui():
                     )
                     clothing_desc = analysis_res.text
                     
-                    st.success("✅ 不要な情報を排除して言語化しました")
-                    with st.expander("AIのスキャンレポート"):
+                    st.success("✅ 対象物を識別し、仕様書を作成しました")
+                    with st.expander("AIの分離レポートを確認"):
                         st.write(clothing_desc)
                 except Exception as e:
                     st.error(f"解析エラー: {e}")
                     return
 
         with col2:
-            st.subheader("2. 生成された設計図")
-            with st.spinner("不要な小物を除外して描画中..."):
-                # 生成プロンプトにも除外指示を念押し
+            st.subheader("2. 完成したアンカー")
+            with st.spinner("指定アイテムのみを再構築中..."):
+                # 生成プロンプト：何を描き、何を描かないかを明確にする
                 final_gen_prompt = (
                     f"{FLAT_LAY_PROMPT_BASE} \n"
-                    f"STRICT NEGATIVE CONSTRAINT: NO {exclude_text}. \n"
-                    f"Technical Specification: {clothing_desc}"
+                    f"MAIN SUBJECT TO DRAW: {keep_items}. \n"
+                    f"STRICT NEGATIVE PROMPT (DO NOT DRAW): {remove_items}. The area where '{remove_items}' was must be clean white background. \n"
+                    f"Technical Specs for subject: {clothing_desc}"
                 )
                 
                 try:
@@ -110,5 +116,5 @@ def show_flatlay_ui():
                 except Exception as e:
                     st.error(f"生成エラー (v{VERSION}): {str(e)}")
     else:
-        if not st.session_state.flat_ref_bytes:
-            st.write("画像をアップロードしてください。")
+        if not st.session_state.flat_ref_bytes and not ref_img:
+            st.write("サイドバーから画像をアップロードしてください。")
