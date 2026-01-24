@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (髪色・髪型を v3.1 仕様で完全固定) ---
+# --- 1. 定義データ (髪型・髪色完全復旧) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -47,27 +47,26 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": "Sophisticated evening gown"
 }
 
-# --- 2. 内部エンジン (Gemini 2.0 Flash による DNA 解析) ---
+# --- 2. 内部エンジン: Identity & Physical Scan ---
 def perform_identity_scan(client, source_bytes):
-    """【内部実行】キャストの肉感・骨格を言語化。ボタン操作不要"""
+    """【内部実行】Gemini 2.0 Flash を使用して骨格・肉感を詳細に言語化"""
     prompt = (
         "Analyze this Japanese woman for professional image synthesis. "
-        "Create a 'Physical DNA Specification' focusing on:\n"
+        "Create a technical 'Physical DNA Specification' focusing on:\n"
         "1. FACIAL: Exact eye shape, bone structure, and unique facial marks.\n"
         "2. BODY VOLUME (CRITICAL): Precise limb thickness (arms, thighs), shoulder width, and actual body mass. Do NOT idealize.\n"
-        "3. PROPORTIONS: Waist-to-hip ratio and height perception.\n"
-        "Output in technical English for absolute physical locking."
+        "3. PROPORTIONS: Waist-to-hip ratio and skeletal structure.\n"
+        "Output in descriptive English for absolute physical locking."
     )
-    # ユーザー指定の解析用モデル
     response = client.models.generate_content(
         model='gemini-2.0-flash', 
         contents=[types.Part.from_bytes(data=source_bytes, mime_type='image/jpeg'), prompt]
     )
     return response.text
 
-# --- 3. 内部エンジン (Imagen 4.0 による Body Volume Lock 生成) ---
+# --- 3. 内部エンジン: KISEKAE Generation ---
 def generate_kisekae_v3(client, dna_spec, anchor_part, pose_text, hair_style, hair_color, cloth_main, cloth_detail, bg_text):
-    """【内部実行】解析データに基づき Imagen 4.0 で肉感を維持して生成"""
+    """【内部実行】Imagen 4.0 (3.0-gen-002) を使用して Body Volume Lock 生成"""
     full_prompt = (
         f"CRITICAL: PHYSICAL FIDELITY LOCK. Reconstruct based on DNA SPEC: {dna_spec}\n"
         f"POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio.\n"
@@ -76,15 +75,14 @@ def generate_kisekae_v3(client, dna_spec, anchor_part, pose_text, hair_style, ha
         f"RENDER: {bg_text}, soft facial fill-light, 8k. NO MODEL BIAS. Maintain original body mass and thigh volume."
     )
     
-    # ユーザー指定の生成用モデル
+    # GenerateImageConfig から不正確なパラメータ(add_watermark)を削除しました
     response = client.models.generate_image(
-        model='imagen-3.0-generate-002', # SDK上でImagen 4.0相当として機能するモデル名
+        model='imagen-3.0-generate-002',
         prompt=full_prompt,
         config=types.GenerateImageConfig(
             aspect_ratio="2:3",
             number_of_images=1,
-            output_mime_type="image/jpeg",
-            add_watermark=False
+            output_mime_type="image/jpeg"
         )
     )
     return response.generated_images[0].image_bytes
@@ -93,12 +91,10 @@ def generate_kisekae_v3(client, dna_spec, anchor_part, pose_text, hair_style, ha
 def show_kisekae_ui():
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # セッションデータの初期化
     if "v3_generated_images" not in st.session_state: 
         st.session_state.v3_generated_images = [None] * 4
 
-    # ここが v3.1 になっているか確認してください
-    st.header("✨ AI KISEKAE Manager v3.1")
+    st.header("✨ AI KISEKAE Manager v3.1.1")
     
     with st.sidebar:
         # 画像アップローダー
@@ -112,16 +108,15 @@ def show_kisekae_ui():
 
         st.divider()
         
-        # v3.1 で復活させた髪色などの設定
+        # 設定項目
         cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
         cloth_detail = st.text_input("衣装詳細指示", "素材感、特定の色など")
         hair_s = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
-        hair_c = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys())) # ここが復活
+        hair_c = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys()))
         st.divider()
-        bg_text = st.text_input("背景場所", "高級ホテル、夜のテラス")
+        bg_text = st.text_input("背景場所", "高級ホテル")
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
         
-        # このボタン一つで全てが走るように統合
         run_btn = st.button("✨ 4枚一括生成 (Scan & Gen)", type="primary")
 
     if run_btn and src_img:
@@ -129,8 +124,8 @@ def show_kisekae_ui():
         status = st.empty(); progress = st.progress(0)
         
         try:
-            # --- [内部スキャン開始] ---
-            status.info("🧬 Step 1/2: キャストの肉感をスキャン中...")
+            # --- [内部スキャン] ---
+            status.info("🧬 Step 1/2: 身体構造のDNAスキャンを実行中...")
             dna_spec = perform_identity_scan(client, src_img.getvalue())
             
             # ポーズの決定
@@ -143,7 +138,7 @@ def show_kisekae_ui():
             # 衣装アンカー
             anchor_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
 
-            # --- [生成ループ開始] ---
+            # --- [生成ループ] ---
             for i in range(4):
                 status.info(f"🎨 Step 2/2: Body Volume Lock 生成中 ({i+1}/4)...")
                 img_bytes = generate_kisekae_v3(
@@ -160,7 +155,7 @@ def show_kisekae_ui():
             st.error(f"生成エラー: {e}")
             status.empty()
 
-    # --- 画像表示エリア ---
+    # --- 表示エリア ---
     if any(img is not None for img in st.session_state.v3_generated_images):
         cols = st.columns(2)
         for i in range(4):
