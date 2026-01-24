@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. [DNA定義] データ群 ---
+# --- 1. 定義データ (黄金律 DNA) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -38,15 +38,16 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": "Sophisticated evening gown"
 }
 
-# --- 2. [解析] Identity & Physical Scan (Gemini 2.0 Flash) ---
+# --- 2. 内部エンジン: Identity Scan (Gemini 2.0 Flash) ---
 def perform_identity_scan(client, source_bytes):
-    """【内部実行】キャストの肉感・骨格を言語化。ここは404になりにくい安定区間です。"""
+    """【安定動作】キャストの肉感・骨格を言語化"""
     prompt = (
-        "Professional Physical Analysis:\n"
-        "1. Identify the exact facial DNA of this Japanese woman.\n"
-        "2. BODY VOLUME LOCK: Precisely describe the arm thickness, thigh volume, shoulder width, and waist-to-hip ratio.\n"
-        "3. Ensure the description prevents AI from idealizing the body. Capture the actual mass.\n"
-        "Output as a technical specification."
+        "Analyze this Japanese woman for professional image synthesis. "
+        "Create a technical 'Physical DNA Specification' focusing on:\n"
+        "1. FACIAL: Eye shape, bone structure, unique facial marks.\n"
+        "2. BODY VOLUME (CRITICAL): Precise limb thickness (arms, thighs), actual body mass. Do NOT idealize.\n"
+        "3. PROPORTIONS: Waist-to-hip ratio and muscle/softness balance.\n"
+        "Output in descriptive technical English."
     )
     response = client.models.generate_content(
         model='gemini-2.0-flash', 
@@ -54,40 +55,30 @@ def perform_identity_scan(client, source_bytes):
     )
     return response.text
 
-# --- 3. [生成] KISEKAE Generation (モデル名フォールバック機能付) ---
+# --- 3. 生成エンジン: KISEKAE (アンカー君と同じ安定方式) ---
 def generate_kisekae_v3(client, dna_spec, anchor_part, pose_text, hair_style, hair_color, cloth_main, cloth_detail, bg_text):
-    """肉感(Body Volume)を維持して生成。404回避のため、複数の呼び名を試行します。"""
-    
+    """【404回避】アンカー製作君と同じ gemini-3-pro-image-preview を使用"""
     full_prompt = (
-        f"CRITICAL: PHYSICAL FIDELITY LOCK. Reconstruct person based on: {dna_spec}\n"
+        f"CRITICAL: PHYSICAL FIDELITY LOCK. Reconstruct based on DNA SPEC: {dna_spec}\n"
         f"POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio.\n"
-        f"WARDROBE: Category: {cloth_main}. Details: {cloth_detail}. Material match with anchor.\n"
+        f"WARDROBE: Follow clothing anchor. Category: {cloth_main}. Details: {cloth_detail}.\n"
         f"HAIR: Style: {hair_style}, Color: {hair_color}.\n"
-        f"RENDER: {bg_text}, soft facial fill-light, 8k. NO MODEL BIAS. Maintain original thigh volume and body thickness."
+        f"RENDER: {bg_text}, soft facial fill-light, 8k. NO MODEL BIAS. Maintain original body mass and thigh volume."
     )
-
-    # 404回避のためのモデル名候補リスト
-    # 2026年現在の環境で最も有力な順に試行します
-    model_candidates = ['imagen-3-fast', 'imagen-3', 'imagen-3.0-generate-001']
     
-    last_error = ""
-    for model_name in model_candidates:
-        try:
-            response = client.models.generate_image(
-                model=model_name,
-                prompt=full_prompt,
-                config=types.GenerateImageConfig(
-                    aspect_ratio="2:3",
-                    number_of_images=1,
-                    output_mime_type="image/jpeg"
-                )
-            )
-            return response.generated_images[0].image_bytes
-        except Exception as e:
-            last_error = str(e)
-            continue # 次のモデル名を試す
-            
-    raise Exception(f"全てのImagenモデルで404が発生しました。最後に試したモデル: {model_candidates[-1]}。エラー: {last_error}")
+    # generate_image ではなく generate_content を使うことで 404 を回避
+    response = client.models.generate_content(
+        model='gemini-3-pro-image-preview',
+        contents=[anchor_part, full_prompt] if anchor_part else [full_prompt],
+        config=types.GenerateContentConfig(
+            response_modalities=['IMAGE'],
+            safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')]
+        )
+    )
+    
+    if response.candidates and response.candidates[0].content.parts:
+        return response.candidates[0].content.parts[0].inline_data.data
+    raise Exception("画像生成に失敗しました（セーフティフィルタ等の可能性）")
 
 # --- 4. UI メイン処理 ---
 def show_kisekae_ui():
@@ -96,7 +87,7 @@ def show_kisekae_ui():
     if "v3_generated_images" not in st.session_state: 
         st.session_state.v3_generated_images = [None] * 4
 
-    st.header("✨ AI KISEKAE Manager v3.1.4")
+    st.header("✨ AI KISEKAE Manager v3.1.5 (Stable)")
     
     with st.sidebar:
         src_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="v3_src")
@@ -119,15 +110,21 @@ def show_kisekae_ui():
         status = st.empty(); progress = st.progress(0)
         
         try:
-            # Step 1: 解析
+            # Step 1: 解析 (Gemini 2.0 Flash)
             status.info("🧬 Step 1/2: 身体構造をスキャン中...")
             dna_spec = perform_identity_scan(client, src_img.getvalue())
             
             # ポーズ決定
-            poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
+            if pose_pattern == "立ち3:座り1":
+                poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
+            else:
+                poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
+            random.shuffle(poses)
+
+            # 衣装アンカー
             anchor_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
 
-            # Step 2: 生成 (内部でモデルIDを自動フォールバック)
+            # Step 2: 生成 (Gemini-Integrated Image Gen)
             for i in range(4):
                 status.info(f"🎨 Step 2/2: Body Volume Lock 生成中 ({i+1}/4)...")
                 img_bytes = generate_kisekae_v3(
@@ -141,8 +138,7 @@ def show_kisekae_ui():
             status.empty(); st.rerun()
 
         except Exception as e:
-            st.error(f"⚠️ 最終エラー: {e}")
-            st.warning("Google AI Studioの設定で『Imagen』が有効になっているか、またはAPIキーのリージョン制限を確認してください。")
+            st.error(f"⚠️ 生成エラー: {e}")
             status.empty()
 
     # --- 表示エリア ---
