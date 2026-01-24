@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (黄金律 DNA) ---
+# --- 1. [絶対不変] 黄金律定義データ ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -27,127 +27,153 @@ HAIR_COLORS = {
     "ハニーブロンド": "bright honey blonde hair color"
 }
 
-STAND_PROMPTS = ["Full body, standing naturally", "Full body, walking towards camera", "Full body, side profile"]
-SIT_PROMPTS = ["Full body, relaxed sitting on a sofa", "Full body, sitting on steps"]
+STAND_PROMPTS = [
+    "Full body, standing naturally, hand gently touching hair",
+    "Full body, leaning against a wall, looking away",
+    "Full body, walking slowly, looking back over shoulder",
+    "Full body, standing with weight on one leg, 85mm lens"
+]
+SIT_PROMPTS = [
+    "Full body, relaxed sitting on a sofa, looking at camera",
+    "Full body, sitting sideways on a chair, professional lighting",
+    "Full body, sitting gracefully on steps, 85mm lens"
+]
 
 CATEGORIES = {
-    "1. 私服（日常）": "Casual everyday Japanese fashion",
-    "2. 水着（リゾート）": "High-end resort swimwear",
-    "3. 部屋着（リラックス）": "Silk night-fashion, satin slip",
-    "4. オフィス（スーツ）": "Professional business attire",
-    "5. 夜の装い（ドレス）": "Sophisticated evening gown"
+    "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin, soft daylight"},
+    "2. 水着（リゾート）": {"en": "High-end stylish resort swimwear", "back_prompt": "healthy skin glow, vibrant lighting"},
+    "3. 部屋着（リラックス）": {"en": "Elegant silk night-fashion, satin slip", "back_prompt": "ultra-soft focus, warm rim lighting"},
+    "4. オフィス（スーツ）": {"en": "Elegant business professional attire", "back_prompt": "sharp corporate lighting, studio look"},
+    "5. コスチューム": {"en": "High-quality themed costume", "back_prompt": "meticulous details, professional strobe"},
+    "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
-# --- 2. 内部エンジン: Identity Scan (Gemini 2.0 Flash) ---
-def perform_identity_scan(client, source_bytes):
-    """【安定動作】キャストの肉感・骨格を言語化"""
+# --- 2. 安定生成エンジン (v2.9系 成功ロジック) ---
+def generate_with_retry(client, contents, prompt, max_retries=2):
+    for attempt in range(max_retries + 1):
+        try:
+            # 洋服アンカー君と同じ安定方式
+            response = client.models.generate_content(
+                model='gemini-3-pro-image-preview',
+                contents=contents + [prompt],
+                config=types.GenerateContentConfig(
+                    response_modalities=['IMAGE'],
+                    safety_settings=[
+                        types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')
+                    ]
+                )
+            )
+            if response.candidates and response.candidates[0].content.parts:
+                return response.candidates[0].content.parts[0].inline_data.data
+        except Exception as e:
+            if "503" in str(e) and attempt < max_retries:
+                time.sleep(2); continue
+            return str(e)
+    return "FAILED"
+
+def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
+    cat_info = CATEGORIES[cat_key]
+    # v2.94 で完成された強固なプロンプト
     prompt = (
-        "Analyze this Japanese woman for professional image synthesis. "
-        "Create a technical 'Physical DNA Specification' focusing on:\n"
-        "1. FACIAL: Eye shape, bone structure, unique facial marks.\n"
-        "2. BODY VOLUME (CRITICAL): Precise limb thickness (arms, thighs), actual body mass. Do NOT idealize.\n"
-        "3. PROPORTIONS: Waist-to-hip ratio and muscle/softness balance.\n"
-        "Output in descriptive technical English."
+        f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 1:1 match.\n"
+        f"2. HAIR: Style: {hair_style_en}, Color: {hair_color_en}.\n"
+        f"3. PHYSICAL: [STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK]. Match body mass of IMAGE 1 exactly.\n"
+        f"4. POSE: {pose_text}. 2:3 aspect ratio.\n"
+        f"5. WARDROBE: {wardrobe_task}\n"
+        f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
     )
-    response = client.models.generate_content(
-        model='gemini-2.0-flash', 
-        contents=[types.Part.from_bytes(data=source_bytes, mime_type='image/jpeg'), prompt]
-    )
-    return response.text
+    return generate_with_retry(client, [identity_part, anchor_part], prompt)
 
-# --- 3. 生成エンジン: KISEKAE (アンカー君と同じ安定方式) ---
-def generate_kisekae_v3(client, dna_spec, anchor_part, pose_text, hair_style, hair_color, cloth_main, cloth_detail, bg_text):
-    """【404回避】アンカー製作君と同じ gemini-3-pro-image-preview を使用"""
-    full_prompt = (
-        f"CRITICAL: PHYSICAL FIDELITY LOCK. Reconstruct based on DNA SPEC: {dna_spec}\n"
-        f"POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio.\n"
-        f"WARDROBE: Follow clothing anchor. Category: {cloth_main}. Details: {cloth_detail}.\n"
-        f"HAIR: Style: {hair_style}, Color: {hair_color}.\n"
-        f"RENDER: {bg_text}, soft facial fill-light, 8k. NO MODEL BIAS. Maintain original body mass and thigh volume."
-    )
-    
-    # generate_image ではなく generate_content を使うことで 404 を回避
-    response = client.models.generate_content(
-        model='gemini-3-pro-image-preview',
-        contents=[anchor_part, full_prompt] if anchor_part else [full_prompt],
-        config=types.GenerateContentConfig(
-            response_modalities=['IMAGE'],
-            safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')]
-        )
-    )
-    
-    if response.candidates and response.candidates[0].content.parts:
-        return response.candidates[0].content.parts[0].inline_data.data
-    raise Exception("画像生成に失敗しました（セーフティフィルタ等の可能性）")
-
-# --- 4. UI メイン処理 ---
+# --- 3. UI メイン処理 ---
 def show_kisekae_ui():
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     
-    if "v3_generated_images" not in st.session_state: 
-        st.session_state.v3_generated_images = [None] * 4
+    # 状態の保持 (撮り直しエラー防止)
+    if "generated_images" not in st.session_state: st.session_state.generated_images = [None] * 4
+    if "current_pose_texts" not in st.session_state: st.session_state.current_pose_texts = [None] * 4
+    if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
+    if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    st.header("✨ AI KISEKAE Manager v3.1.5 (Stable)")
+    st.header("✨ AI KISEKAE Manager v2.95 (Restored Stable)")
     
     with st.sidebar:
-        src_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="v3_src")
-        if src_img: st.image(src_img, caption="DNA Source", use_container_width=True)
+        source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
+        if source_img:
+            st.session_state.source_bytes = source_img.getvalue()
+            st.image(source_img, caption="IMAGE 1 確認", use_container_width=True)
         
         st.divider()
-        ref_img = st.file_uploader("衣装アンカー (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="v3_ref")
+
+        ref_img = st.file_uploader("衣装参考 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
+        if ref_img:
+            st.session_state.ref_bytes = ref_img.getvalue()
+            st.image(ref_img, caption="IMAGE 2 確認", use_container_width=True)
+
+        st.divider()
         
-        cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
-        cloth_detail = st.text_input("衣装詳細指示", "素材感、色、装飾など")
+        cloth_main = st.selectbox("衣装カテゴリー", list(CATEGORIES.keys()))
+        cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン、光沢感")
         hair_s = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
         hair_c = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys()))
-        bg_text = st.text_input("背景場所", "高級ホテル")
+        st.divider()
+        bg_text = st.text_input("場所", "高級ホテル")
+        time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
         pose_pattern = st.radio("生成配分", ["立ち3:座り1", "立ち2:座り2"])
-        
-        run_btn = st.button("✨ 4枚一括生成 (Scan & Gen)", type="primary")
+        run_btn = st.button("✨ 4枚一括生成", type="primary")
 
-    if run_btn and src_img:
-        st.session_state.v3_generated_images = [None] * 4
+    if run_btn and st.session_state.source_bytes:
+        st.session_state.generated_images = [None] * 4
+        time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden hour glow", "夜 (Night)": "night lights"}
+        st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
+        
+        if pose_pattern == "立ち3:座り1":
+            poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
+        else:
+            poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
+        random.shuffle(poses)
+        st.session_state.current_pose_texts = poses
+
         status = st.empty(); progress = st.progress(0)
+        status.info("🕒 Step 1/2: 衣装アンカー抽出中...")
+        anchor_prompt = f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. 1:1 aspect ratio."
         
-        try:
-            # Step 1: 解析 (Gemini 2.0 Flash)
-            status.info("🧬 Step 1/2: 身体構造をスキャン中...")
-            dna_spec = perform_identity_scan(client, src_img.getvalue())
+        contents = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')] if st.session_state.ref_bytes else []
+        res_data = generate_with_retry(client, contents, anchor_prompt)
+        
+        if isinstance(res_data, bytes):
+            st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
+            st.session_state.wardrobe_task = f"Strictly apply design from IMAGE 2. {cloth_detail}."
             
-            # ポーズ決定
-            if pose_pattern == "立ち3:座り1":
-                poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
-            else:
-                poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
-            random.shuffle(poses)
-
-            # 衣装アンカー
-            anchor_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg') if ref_img else None
-
-            # Step 2: 生成 (Gemini-Integrated Image Gen)
+            identity_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
             for i in range(4):
-                status.info(f"🎨 Step 2/2: Body Volume Lock 生成中 ({i+1}/4)...")
-                img_bytes = generate_kisekae_v3(
-                    client, dna_spec, anchor_part, poses[i], 
-                    HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], 
-                    CATEGORIES[cloth_main], cloth_detail, bg_text
-                )
-                st.session_state.v3_generated_images[i] = Image.open(io.BytesIO(img_bytes))
+                status.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
+                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], identity_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
+                if isinstance(res, bytes):
+                    st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
                 progress.progress((i+1)/4)
-            
             status.empty(); st.rerun()
+        else:
+            st.error(f"アンカー失敗: {res_data}")
 
-        except Exception as e:
-            st.error(f"⚠️ 生成エラー: {e}")
-            status.empty()
-
-    # --- 表示エリア ---
-    if any(img is not None for img in st.session_state.v3_generated_images):
+    # --- 表示エリア (個別撮り直し対応) ---
+    if any(img is not None for img in st.session_state.generated_images):
         cols = st.columns(2)
         for i in range(4):
             with cols[i % 2]:
-                if st.session_state.v3_generated_images[i]:
-                    img = st.session_state.v3_generated_images[i]
+                img = st.session_state.generated_images[i]
+                if img:
                     st.image(img, use_container_width=True)
-                    buf = io.BytesIO(); img.save(buf, format="JPEG")
-                    st.download_button("💾 保存", buf.getvalue(), f"v3_img_{i+1}.jpg", key=f"v3_dl_{i}")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        buf = io.BytesIO(); img.save(buf, format="JPEG")
+                        st.download_button("💾 保存", buf.getvalue(), f"img_{i+1}.jpg", "image/jpeg", key=f"dl_{i}")
+                    with c2:
+                        if st.button("🔄 撮り直し", key=f"re_{i}"):
+                            if st.session_state.source_bytes:
+                                with st.spinner("再生成中..."):
+                                    id_p = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
+                                    res = generate_image_by_text(client, st.session_state.current_pose_texts[i], id_p, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
+                                    if isinstance(res, bytes):
+                                        st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+                                        st.rerun()
