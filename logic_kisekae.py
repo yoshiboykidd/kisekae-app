@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (髪型・髪色完全復旧) ---
+# --- 1. 定義データ (黄金律 DNA) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -29,14 +29,14 @@ HAIR_COLORS = {
 
 STAND_PROMPTS = [
     "Full body, standing naturally, hand gently touching hair",
-    "Full body, leaning against a wall, looking away",
-    "Full body, walking slowly, looking back",
-    "Full body, weight on one leg"
+    "Full body, leaning against a wall, arms crossed",
+    "Full body, walking slowly towards camera",
+    "Full body, side profile standing, weight on one leg"
 ]
 SIT_PROMPTS = [
     "Full body, relaxed sitting on a sofa",
     "Full body, sitting sideways on a chair",
-    "Full body, sitting gracefully on steps"
+    "Full body, sitting on steps with hands on knees"
 ]
 
 CATEGORIES = {
@@ -47,37 +47,38 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": "Sophisticated evening gown"
 }
 
-# --- 2. 内部エンジン: Identity & Physical Scan ---
+# --- 2. 内部エンジン: Identity & Physical Scan (Gemini 2.0 Flash) ---
 def perform_identity_scan(client, source_bytes):
-    """【内部実行】Gemini 2.0 Flash を使用して骨格・肉感を詳細に言語化"""
+    """【内部実行】キャストの肉感・骨格を言語化し、Physical DNA Spec を作成"""
     prompt = (
         "Analyze this Japanese woman for professional image synthesis. "
         "Create a technical 'Physical DNA Specification' focusing on:\n"
-        "1. FACIAL: Exact eye shape, bone structure, and unique facial marks.\n"
+        "1. FACIAL: Precise eye shape, bone structure, and unique moles/marks.\n"
         "2. BODY VOLUME (CRITICAL): Precise limb thickness (arms, thighs), shoulder width, and actual body mass. Do NOT idealize.\n"
-        "3. PROPORTIONS: Waist-to-hip ratio and skeletal structure.\n"
-        "Output in descriptive English for absolute physical locking."
+        "3. PROPORTIONS: Waist-to-hip ratio and muscle/softness balance.\n"
+        "Output in descriptive technical English for absolute physical locking."
     )
+    # Gemini 2.0 Flash は安定して動作します
     response = client.models.generate_content(
         model='gemini-2.0-flash', 
         contents=[types.Part.from_bytes(data=source_bytes, mime_type='image/jpeg'), prompt]
     )
     return response.text
 
-# --- 3. 内部エンジン: KISEKAE Generation ---
+# --- 3. 内部エンジン: KISEKAE Generation (Imagen 3.0 stable) ---
 def generate_kisekae_v3(client, dna_spec, anchor_part, pose_text, hair_style, hair_color, cloth_main, cloth_detail, bg_text):
-    """【内部実行】Imagen 4.0 (3.0-gen-002) を使用して Body Volume Lock 生成"""
+    """【内部実行】解析データに基づき 肉感(Body Volume)を維持して生成"""
     full_prompt = (
         f"CRITICAL: PHYSICAL FIDELITY LOCK. Reconstruct based on DNA SPEC: {dna_spec}\n"
         f"POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio.\n"
-        f"WARDROBE: Match anchor material. Category: {cloth_main}. Details: {cloth_detail}.\n"
+        f"WARDROBE: Follow clothing anchor design. Category: {cloth_main}. Details: {cloth_detail}.\n"
         f"HAIR: Style: {hair_style}, Color: {hair_color}.\n"
-        f"RENDER: {bg_text}, soft facial fill-light, 8k. NO MODEL BIAS. Maintain original body mass and thigh volume."
+        f"RENDER: {bg_text}, soft facial fill-light, 8k. NO MODEL BIAS. Maintain original thigh volume and body thickness."
     )
     
-    # GenerateImageConfig から不正確なパラメータ(add_watermark)を削除しました
+    # 修正：モデル名を 002 から 安定版 001 へ変更
     response = client.models.generate_image(
-        model='imagen-3.0-generate-002',
+        model='imagen-3.0-generate-001',
         prompt=full_prompt,
         config=types.GenerateImageConfig(
             aspect_ratio="2:3",
@@ -93,16 +94,20 @@ def show_kisekae_ui():
     
     if "v3_generated_images" not in st.session_state: 
         st.session_state.v3_generated_images = [None] * 4
+    if "source_bytes_v3" not in st.session_state: st.session_state.source_bytes_v3 = None
 
-    st.header("✨ AI KISEKAE Manager v3.1.1")
+    st.header("✨ AI KISEKAE Manager v3.1.2")
     
     with st.sidebar:
-        # 画像アップローダー
+        # IMAGE 1
         src_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="v3_src")
-        if src_img: st.image(src_img, caption="DNA Source", use_container_width=True)
+        if src_img:
+            st.session_state.source_bytes_v3 = src_img.getvalue()
+            st.image(src_img, caption="DNA Source", use_container_width=True)
         
         st.divider()
         
+        # IMAGE 2
         ref_img = st.file_uploader("衣装アンカー (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="v3_ref")
         if ref_img: st.image(ref_img, caption="Wardrobe Anchor", use_container_width=True)
 
@@ -110,7 +115,7 @@ def show_kisekae_ui():
         
         # 設定項目
         cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
-        cloth_detail = st.text_input("衣装詳細指示", "素材感、特定の色など")
+        cloth_detail = st.text_input("衣装詳細指示", placeholder="素材感、色、装飾など")
         hair_s = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
         hair_c = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys()))
         st.divider()
@@ -119,16 +124,16 @@ def show_kisekae_ui():
         
         run_btn = st.button("✨ 4枚一括生成 (Scan & Gen)", type="primary")
 
-    if run_btn and src_img:
+    if run_btn and st.session_state.source_bytes_v3:
         st.session_state.v3_generated_images = [None] * 4
         status = st.empty(); progress = st.progress(0)
         
         try:
-            # --- [内部スキャン] ---
-            status.info("🧬 Step 1/2: 身体構造のDNAスキャンを実行中...")
-            dna_spec = perform_identity_scan(client, src_img.getvalue())
+            # --- [内部スキャン自動実行] ---
+            status.info("🧬 Step 1/2: キャストの肉感をDNAスキャン中...")
+            dna_spec = perform_identity_scan(client, st.session_state.source_bytes_v3)
             
-            # ポーズの決定
+            # ポーズ抽選
             if pose_pattern == "立ち3:座り1":
                 poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
             else:
