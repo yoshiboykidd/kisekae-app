@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. [絶対不変] 黄金律定義データ ---
+# --- 1. 定義データ (黄金律) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -27,32 +27,22 @@ HAIR_COLORS = {
     "ハニーブロンド": "bright honey blonde hair color"
 }
 
-STAND_PROMPTS = [
-    "Full body, standing naturally, hand gently touching hair",
-    "Full body, leaning against a wall, looking away",
-    "Full body, walking slowly, looking back over shoulder",
-    "Full body, standing with weight on one leg, 85mm lens"
-]
-SIT_PROMPTS = [
-    "Full body, relaxed sitting on a sofa, looking at camera",
-    "Full body, sitting sideways on a chair, professional lighting",
-    "Full body, sitting gracefully on steps, 85mm lens"
-]
+STAND_PROMPTS = ["Full body, standing naturally", "Full body, leaning against a wall", "Full body, walking slowly", "Full body, weight on one leg"]
+SIT_PROMPTS = ["Full body, sitting on sofa", "Full body, sitting sideways on chair", "Full body, sitting on steps"]
 
 CATEGORIES = {
-    "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin, soft daylight"},
-    "2. 水着（リゾート）": {"en": "High-end stylish resort swimwear", "back_prompt": "healthy skin glow, vibrant lighting"},
-    "3. 部屋着（リラックス）": {"en": "Elegant silk night-fashion, satin slip", "back_prompt": "ultra-soft focus, warm rim lighting"},
-    "4. オフィス（スーツ）": {"en": "Elegant business professional attire", "back_prompt": "sharp corporate lighting, studio look"},
-    "5. コスチューム": {"en": "High-quality themed costume", "back_prompt": "meticulous details, professional strobe"},
+    "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin, daylight"},
+    "2. 水着（リゾート）": {"en": "High-end stylish resort swimwear", "back_prompt": "healthy skin glow"},
+    "3. 部屋着（リラックス）": {"en": "Elegant silk night-fashion", "back_prompt": "ultra-soft focus"},
+    "4. オフィス（スーツ）": {"en": "Elegant business professional attire", "back_prompt": "sharp corporate lighting"},
+    "5. コスチューム": {"en": "High-quality themed costume", "back_prompt": "meticulous details"},
     "6. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
-# --- 2. 安定生成エンジン (v2.9系 成功ロジック) ---
+# --- 2. 生成エンジン (安定型) ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
     for attempt in range(max_retries + 1):
         try:
-            # 洋服アンカー君と同じ安定方式
             response = client.models.generate_content(
                 model='gemini-3-pro-image-preview',
                 contents=contents + [prompt],
@@ -65,6 +55,7 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
             )
             if response.candidates and response.candidates[0].content.parts:
                 return response.candidates[0].content.parts[0].inline_data.data
+            return "SAFETY_BLOCK"
         except Exception as e:
             if "503" in str(e) and attempt < max_retries:
                 time.sleep(2); continue
@@ -73,13 +64,12 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
     cat_info = CATEGORIES[cat_key]
-    # v2.94 で完成された強固なプロンプト
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 1:1 match.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match.\n"
         f"2. HAIR: Style: {hair_style_en}, Color: {hair_color_en}.\n"
-        f"3. PHYSICAL: [STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK]. Match body mass of IMAGE 1 exactly.\n"
-        f"4. POSE: {pose_text}. 2:3 aspect ratio.\n"
+        f"3. PHYSICAL: ABSOLUTE BODY VOLUME LOCK. Match IMAGE 1.\n"
+        f"4. POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio.\n"
         f"5. WARDROBE: {wardrobe_task}\n"
         f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
     )
@@ -89,31 +79,33 @@ def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardro
 def show_kisekae_ui():
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # 状態の保持 (撮り直しエラー防止)
+    # セッション状態の初期化
     if "generated_images" not in st.session_state: st.session_state.generated_images = [None] * 4
     if "current_pose_texts" not in st.session_state: st.session_state.current_pose_texts = [None] * 4
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    st.header("✨ AI KISEKAE Manager v2.95 (Restored Stable)")
+    st.header("✨ AI KISEKAE System (v2.94)")
     
     with st.sidebar:
+        # IMAGE 1
         source_img = st.file_uploader("キャスト写真 (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
         if source_img:
-            st.session_state.source_bytes = source_img.getvalue()
+            st.session_state.source_bytes = source_img.getvalue() # バイトデータを保持
             st.image(source_img, caption="IMAGE 1 確認", use_container_width=True)
         
         st.divider()
 
+        # IMAGE 2
         ref_img = st.file_uploader("衣装参考 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
         if ref_img:
-            st.session_state.ref_bytes = ref_img.getvalue()
+            st.session_state.ref_bytes = ref_img.getvalue() # バイトデータを保持
             st.image(ref_img, caption="IMAGE 2 確認", use_container_width=True)
 
         st.divider()
         
         cloth_main = st.selectbox("衣装カテゴリー", list(CATEGORIES.keys()))
-        cloth_detail = st.text_input("衣装仕様書", placeholder="例：黒サテン、光沢感")
+        cloth_detail = st.text_input("衣装仕様書", placeholder="例：サテンの光沢")
         hair_s = st.selectbox("💇 髪型アレンジ", list(HAIR_STYLES.keys()))
         hair_c = st.selectbox("🎨 髪色変更", list(HAIR_COLORS.keys()))
         st.divider()
@@ -124,7 +116,7 @@ def show_kisekae_ui():
 
     if run_btn and st.session_state.source_bytes:
         st.session_state.generated_images = [None] * 4
-        time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden hour glow", "夜 (Night)": "night lights"}
+        time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden sunset", "夜 (Night)": "night lights"}
         st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
         
         if pose_pattern == "立ち3:座り1":
@@ -138,6 +130,7 @@ def show_kisekae_ui():
         status.info("🕒 Step 1/2: 衣装アンカー抽出中...")
         anchor_prompt = f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. 1:1 aspect ratio."
         
+        # 保持したバイトデータを使用
         contents = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')] if st.session_state.ref_bytes else []
         res_data = generate_with_retry(client, contents, anchor_prompt)
         
@@ -156,7 +149,7 @@ def show_kisekae_ui():
         else:
             st.error(f"アンカー失敗: {res_data}")
 
-    # --- 表示エリア (個別撮り直し対応) ---
+    # --- 表示エリア ---
     if any(img is not None for img in st.session_state.generated_images):
         cols = st.columns(2)
         for i in range(4):
@@ -170,6 +163,7 @@ def show_kisekae_ui():
                         st.download_button("💾 保存", buf.getvalue(), f"img_{i+1}.jpg", "image/jpeg", key=f"dl_{i}")
                     with c2:
                         if st.button("🔄 撮り直し", key=f"re_{i}"):
+                            # 重要：ここでも Session State からデータを引き出す
                             if st.session_state.source_bytes:
                                 with st.spinner("再生成中..."):
                                     id_p = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
@@ -177,3 +171,5 @@ def show_kisekae_ui():
                                     if isinstance(res, bytes):
                                         st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
                                         st.rerun()
+                            else:
+                                st.error("キャスト写真が読み込めません。再度アップロードしてください。")
