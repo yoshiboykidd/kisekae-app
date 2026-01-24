@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (黄金律) ---
+# --- 1. 定義データ (変更なし) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -49,7 +49,7 @@ LOCATION_EXAMPLES = """
 ・地元の小さな商店街
 """
 
-# --- 2. 生成エンジン (v2.94 安定型) ---
+# --- 2. 生成エンジン (持ち物制御ロジック注入) ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
     for attempt in range(max_retries + 1):
         try:
@@ -73,18 +73,22 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
     cat_info = CATEGORIES[cat_key]
+    
+    # 持ち物制御: カバンを禁止し、記載されたアイテムのみを許可する指示を追加
+    item_control = "DO NOT add any handbags, purses, or bags. Keep hands empty unless a specific item is mentioned in WARDROBE or RENDER."
+
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
         f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match.\n"
         f"2. HAIR: Style: {hair_style_en}, Color: {hair_color_en}.\n"
         f"3. PHYSICAL: ABSOLUTE BODY VOLUME LOCK. Match IMAGE 1 volume exactly.\n"
-        f"4. POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio.\n"
+        f"4. POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio. {item_control}\n"
         f"5. WARDROBE: {wardrobe_task}\n"
         f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
     )
     return generate_with_retry(client, [identity_part, anchor_part], prompt)
 
-# --- 3. UI メイン処理 (並び順修正版) ---
+# --- 3. UI メイン処理 ---
 def show_kisekae_ui():
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     
@@ -93,7 +97,7 @@ def show_kisekae_ui():
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    st.header("✨ AI KISEKAE Classic (v2.94-J)")
+    st.header("✨ AI KISEKAE Classic (v2.94-Fixed)")
     
     with st.sidebar:
         # 1. キャスト (IMAGE 1)
@@ -116,7 +120,7 @@ def show_kisekae_ui():
         cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
 
         # 4. 衣装詳細
-        cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、光沢感")
+        cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、シャンパングラスを持つ")
 
         st.divider()
 
@@ -128,7 +132,7 @@ def show_kisekae_ui():
 
         st.divider()
 
-        # 7. ロケーション (自由記載 + 時間帯)
+        # 7. ロケーション
         st.subheader("📍 ロケーション")
         bg_text = st.text_input("場所を入力", "高級ホテル")
         time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
