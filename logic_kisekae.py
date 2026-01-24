@@ -21,7 +21,7 @@ HAIR_COLORS = {
     "元画像のまま": "original hair color from IMAGE 1",
     "ナチュラルブラック": "natural black hair",
     "ダークブラウン": "deep dark brown hair",
-    "アッシュベージュ": "ash beige hair color",
+    "ashベージュ": "ash beige hair color",
     "ミルクティーグレージュ": "soft milk-tea greige hair color",
     "ピンクブラウン": "pinkish brown hair color",
     "ハニーブロンド": "bright honey blonde hair color"
@@ -38,16 +38,16 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
-# ロケーション例文 (UI表示用)
+# 日本語のみのコピー用例文
 LOCATION_EXAMPLES = """
 【コピー用例文】
-・街角のオープンカフェ (at an elegant open-air street cafe)
-・洗練された並木道 (on a refined tree-lined boulevard)
-・お洒落なセレクトショップ (inside a stylish select shop)
-・ルーフトップテラス (on a spacious rooftop terrace)
-・都会のバーカウンター (at a sleek bar counter)
-・住宅街の静かな公園 (in a quiet residential park)
-・地元の小さな商店街 (at a local small shopping street)
+・街角のオープンカフェ
+・洗練された並木道
+・お洒落なセレクトショップ
+・ルーフトップテラス
+・都会を一望するバーカウンター
+・住宅街の静かな公園
+・地元の小さな商店街
 """
 
 # --- 2. 生成エンジン (v2.94 安定型) ---
@@ -74,7 +74,6 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
     cat_info = CATEGORIES[cat_key]
-    # v2.94 黄金プロンプト
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
         f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match.\n"
@@ -95,10 +94,10 @@ def show_kisekae_ui():
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    st.header("✨ AI KISEKAE Classic (v2.94-Stable)")
+    st.header("✨ AI KISEKAE Classic (v2.94-J)")
     
     with st.sidebar:
-        # IMAGE 1 & 2
+        # アップローダー
         src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
         if src_img:
             st.session_state.source_bytes = src_img.getvalue()
@@ -113,11 +112,11 @@ def show_kisekae_ui():
 
         st.divider()
         
-        # --- 設定エリア ---
+        # --- ロケーション設定 ---
         st.subheader("📍 ロケーション")
-        bg_text = st.text_input("場所を自由に入力", "高級ホテル")
-        st.caption("※下の例文をコピーして使えます")
-        st.text(LOCATION_EXAMPLES) # プリセットをテキスト表示
+        bg_text = st.text_input("場所を入力", "高級ホテル")
+        st.caption("※下の例文をコピーして使用できます")
+        st.text(LOCATION_EXAMPLES) 
         
         time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
         
@@ -128,7 +127,7 @@ def show_kisekae_ui():
         st.divider()
         
         cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
-        cloth_detail = st.text_input("衣装仕様", placeholder="例：黒サテン、光沢感")
+        cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、光沢感")
         hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
         hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
         
@@ -140,7 +139,6 @@ def show_kisekae_ui():
         time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden sunset", "夜 (Night)": "night lights"}
         st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
         
-        # ポーズ抽選
         if pose_pattern == "立ち3:座り1":
             poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
         else:
@@ -149,9 +147,8 @@ def show_kisekae_ui():
         st.session_state.current_pose_texts = poses
 
         status = st.empty(); progress = st.progress(0)
-        status.info("🕒 アンカー抽出中...")
+        status.info("🕒 アンカー作成中...")
         
-        # アンカー作成
         contents = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')] if st.session_state.ref_bytes else []
         res_data = generate_with_retry(client, contents, f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. 1:1 aspect ratio.")
         
@@ -168,7 +165,7 @@ def show_kisekae_ui():
                 progress.progress((i+1)/4)
             status.empty(); st.rerun()
 
-    # --- 表示エリア (撮り直し・保存完備) ---
+    # --- 表示エリア ---
     if any(img is not None for img in st.session_state.generated_images):
         cols = st.columns(2)
         for i in range(4):
