@@ -1,8 +1,8 @@
 import streamlit as st
-# logic_flatlay は読み込まず、メインのみに集中させます
 import logic_kisekae
+import logic_flatlay  # サブ機能を再度読み込みます
 
-# --- 1. 基本設定 (v2.90) ---
+# --- 1. 基本設定 (v2.95) ---
 st.set_page_config(
     page_title="AI KISEKAE Manager Pro",
     layout="wide",
@@ -26,6 +26,17 @@ def check_password():
             st.error("😕 Password incorrect")
     return False
 
-# --- 3. メイン機能呼び出し ---
+# --- 3. メイン処理 (モード切り替え) ---
 if check_password():
-    logic_kisekae.show_kisekae_ui()
+    st.sidebar.title("🚀 MENU")
+    mode = st.sidebar.radio(
+        "機能を選択してください",
+        ["✨ AI KISEKAE (Main)", "👕 洋服アンカー制作 (Sub)"],
+        index=0
+    )
+    st.sidebar.divider()
+
+    if mode == "✨ AI KISEKAE (Main)":
+        logic_kisekae.show_kisekae_ui()
+    else:
+        logic_flatlay.show_flatlay_ui()
