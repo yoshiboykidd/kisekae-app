@@ -5,66 +5,113 @@ from PIL import Image
 import io
 import time
 
-# --- 安定生成エンジン (Mainと共通の地雷回避ロジック) ---
-def generate_flatlay_stable(client, contents, prompt, max_retries=2):
-    for attempt in range(max_retries + 1):
-        try:
-            # 安定版の最小構成 Config
-            response = client.models.generate_content(
-                model='gemini-3-pro-image-preview',
-                contents=contents + [prompt],
-                config=types.GenerateContentConfig(
-                    response_modalities=['IMAGE'],
-                    safety_settings=[
-                        types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')
-                    ]
-                )
-            )
-            if response.candidates and response.candidates[0].content.parts:
-                return response.candidates[0].content.parts[0].inline_data.data
-        except Exception as e:
-            if "503" in str(e) and attempt < max_retries:
-                time.sleep(2); continue
-            return str(e)
-    return "FAILED"
+# --- 1. 定数定義 (v2.2: 商業写真クオリティの定義) ---
+VERSION = "2.2"
+FLAT_LAY_PROMPT_BASE = (
+    "A high-end professional fashion catalog flat lay photography of a SINGLE standalone garment. "
+    "Shot from a direct top-down bird's-eye view, perfectly centered on a seamless, solid pure white studio background (#FFFFFF). "
+    "High-key studio lighting, no harsh shadows, extremely sharp focus. "
+    "8k resolution, photorealistic fabric textures and intricate material details. "
+    "STRICT RULE: Only the clothing. NO humans, NO body parts, NO mannequins, NO accessories."
+)
 
 def show_flatlay_ui():
-    st.header("👕 洋服アンカー制作 (Sub System)")
-    st.write("複雑な衣装を、KISEKAE Mainで使いやすい『綺麗な設計図』に変換します。")
+    st.header(f"👕 洋服アンカー制作 (v{VERSION})")
+    st.info("解析（Gemini 2.0）と描画（Imagen 4.0）の連携により、実物の『質感・構造』を精密に再現します。")
     
+    # APIクライアントの初期化
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    
+
     # バイトデータ保持用の初期化
-    if "flat_ref_bytes" not in st.session_state: st.session_state.flat_ref_bytes = None
+    if "flat_ref_bytes" not in st.session_state: 
+        st.session_state.flat_ref_bytes = None
 
     with st.sidebar:
-        ref_img = st.file_uploader("元の衣装画像", type=['png', 'jpg', 'jpeg'], key="f_src")
+        st.header("📸 抽出設定")
+        ref_img = st.file_uploader("元の衣装画像 (IMAGE 2の素)", type=['png', 'jpg', 'jpeg'], key="f_src")
+        
         if ref_img:
             st.session_state.flat_ref_bytes = ref_img.getvalue()
-            st.image(ref_img, caption="元画像プレビュー", use_container_width=True)
+            st.image(ref_img, caption="解析対象のプレビュー", use_container_width=True)
         
-        desc = st.text_input("衣装の特徴（素材・色）", "サテン、光沢のあるシルク、細かいレース")
-        run_btn = st.button("🚀 アンカー画像を生成", type="primary")
+        category = st.selectbox("アイテムの種類", [
+            "Casual fashion", "Night-fashion", "Satin slip", "Silk camisole", "Business suit", "Swimwear"
+        ])
+        
+        st.divider()
+        run_btn = st.button("🚀 アンカー（設計図）を精密生成", type="primary")
 
     if run_btn and st.session_state.flat_ref_bytes:
-        with st.spinner("高品質な設計図を生成中..."):
-            # アスペクト比 1:1 はプロンプト内で指示
-            prompt = (
-                f"Professional catalog shot of a clothing flat lay: {desc}. "
-                f"Neutral grey background, industrial textile scan quality, 1:1 square aspect ratio."
-            )
-            
-            contents = [types.Part.from_bytes(data=st.session_state.flat_ref_bytes, mime_type='image/jpeg')]
-            res_data = generate_flatlay_stable(client, contents, prompt)
-            
-            if isinstance(res_data, bytes):
-                img = Image.open(io.BytesIO(res_data))
-                st.success("✨ 設計図（アンカー）の生成に成功しました")
-                st.image(img, caption="この画像を保存して Main の IMAGE 2 で使用してください", use_container_width=True)
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("1. AI解析結果")
+            # --- Step 1: 解析 (Gemini 2.0 Flash) ---
+            with st.spinner("テキスタイル・スキャンを実行中..."):
+                try:
+                    input_img_part = types.Part.from_bytes(
+                        data=st.session_state.flat_ref_bytes, 
+                        mime_type='image/jpeg'
+                    )
+                    
+                    # 衣服の「仕様書」を書かせるためのプロンプト
+                    analysis_prompt = (
+                        f"Analyze the {category} in this image as a textile and fashion expert. "
+                        "Precisely describe the following for image reconstruction: "
+                        "1. Fabric material and finish (e.g., glossy satin, sheer lace, matte cotton), "
+                        "2. Exact color and lighting effects on the surface, "
+                        "3. Structural details (neckline, stitching, hemline, silhouette). "
+                        "Focus exclusively on the garment. Output a technical specification."
+                    )
+                    
+                    analysis_res = client.models.generate_content(
+                        model='gemini-2.0-flash', 
+                        contents=[analysis_prompt, input_img_part]
+                    )
+                    clothing_desc = analysis_res.text
+                    
+                    st.success("✅ 衣服の特徴を完全に言語化しました")
+                    with st.expander("AIのスキャンレポートを確認"):
+                        st.write(clothing_desc)
+                except Exception as e:
+                    st.error(f"解析フェーズでエラーが発生しました: {e}")
+                    return
+
+        with col2:
+            st.subheader("2. 完成したアンカー（IMAGE 2用）")
+            # --- Step 2: 生成 (Imagen 4.0) ---
+            with st.spinner("Imagen 4.0 が実物に近い質感を再構築中..."):
+                final_gen_prompt = f"{FLAT_LAY_PROMPT_BASE} \nTechnical Specification: {clothing_desc}"
                 
-                # ダウンロードボタン
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                st.download_button("💾 アンカー画像を保存", buf.getvalue(), "clothing_anchor.png", "image/png")
-            else:
-                st.error(f"生成失敗: {res_data}")
+                try:
+                    # 
+                    gen_response = client.models.generate_image(
+                        model='imagen-4.0-generate-001',
+                        prompt=final_gen_prompt,
+                        config=types.GenerateImageConfig(
+                            aspect_ratio="3:4", 
+                            output_mime_type='image/png'
+                        )
+                    )
+
+                    if gen_response.generated_images:
+                        img_bytes = gen_response.generated_images[0].image.image_bytes
+                        final_img = Image.open(io.BytesIO(img_bytes))
+                        st.image(final_img, use_container_width=True)
+                        
+                        # ダウンロードボタン
+                        st.download_button(
+                            label="💾 アンカー画像を保存", 
+                            data=img_bytes, 
+                            file_name=f"clothing_anchor_{int(time.time())}.png", 
+                            mime="image/png"
+                        )
+                    else:
+                        st.error("画像生成エンジンから応答がありませんでした。")
+
+                except Exception as e:
+                    st.error(f"生成フェーズでエラーが発生しました (v{VERSION}): {str(e)}")
+                    st.info("Imagen 4.0 の呼び出し制限またはアスペクト比設定を確認してください。")
+    else:
+        if not st.session_state.flat_ref_bytes:
+            st.write("サイドバーから画像をアップロードし、生成ボタンを押してください。")
