@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (v3.0 固定データ) ---
+# --- 1. 定義データ (v3.0 黄金律 & 持ち物制御) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -72,8 +72,8 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
     cat_info = CATEGORIES[cat_key]
-    # カバン禁止・手ぶら推奨ロジック
-    item_control = "DO NOT add any handbags, purses, or bags. Keep hands empty unless a specific item is mentioned in WARDROBE or RENDER."
+    # v3.0 鉄則: カバン・バッグ類を禁止
+    item_control = "DO NOT add any handbags, purses, or bags. Keep hands empty unless a specific item is mentioned."
 
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
@@ -95,14 +95,13 @@ def show_kisekae_ui():
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    # サイドバー：ナビゲーションを1つに統合
     with st.sidebar:
-        # 重複を排除：ラジオボタン1本でメニュー切り替え
-        menu = st.radio("メニュー選択", ["✨ AI KISEKAE", "👕 洋服制作君"], label_visibility="collapsed")
+        # 重複解消：メニュー選択はここ1箇所、1つのラジオボタンのみ
+        menu = st.radio("MENU", ["✨ AI KISEKAE", "👕 洋服制作君"], key="main_menu_radio", label_visibility="collapsed")
         
+        # --- ✨ AI KISEKAE 設定 ---
         if menu == "✨ AI KISEKAE":
             st.divider()
-            # 1. キャスト
             src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
             if src_img:
                 st.session_state.source_bytes = src_img.getvalue()
@@ -110,7 +109,6 @@ def show_kisekae_ui():
             
             st.divider()
 
-            # 2. 衣装
             ref_img = st.file_uploader("衣装 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
             if ref_img:
                 st.session_state.ref_bytes = ref_img.getvalue()
@@ -118,19 +116,16 @@ def show_kisekae_ui():
 
             st.divider()
 
-            # 3 & 4. カテゴリーと詳細
             cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
             cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、シャンパングラスを持つ")
 
             st.divider()
 
-            # 5 & 6. 髪型と髪色
             hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
             hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
 
             st.divider()
 
-            # 7. ロケーション
             st.subheader("📍 ロケーション")
             bg_text = st.text_input("場所を入力", value="", placeholder="街角のオープンカフェ")
             time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
@@ -140,23 +135,22 @@ def show_kisekae_ui():
 
             st.divider()
 
-            # 8. 生成比率
             pose_pattern = st.radio("生成比率", ["立ち3:座り1", "立ち2:座り2"])
             
             st.divider()
             
             run_btn = st.button("✨ 4枚一括生成", type="primary")
 
-    # --- メインエリア表示 ---
+    # --- メインエリア：タイトルと出力表示 ---
+    st.header(f"{menu} ツール ver3.0")
+
     if menu == "✨ AI KISEKAE":
-        st.header("✨ AI KISEKAE ツール ver3.0")
-        
         if run_btn and st.session_state.source_bytes:
             st.session_state.generated_images = [None] * 4
             time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden sunset", "夜 (Night)": "night lights"}
             st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
             
-            # ポーズサンプリング（重複排除ロジック）
+            # ポーズサンプリング
             if pose_pattern == "立ち3:座り1":
                 poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
             else:
@@ -167,6 +161,7 @@ def show_kisekae_ui():
             status = st.empty(); progress = st.progress(0)
             status.info("🕒 Step 1/2: 衣装アンカー作成中...")
             
+            # Step 1: アンカー
             contents = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')] if st.session_state.ref_bytes else []
             res_data = generate_with_retry(client, contents, f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. 1:1 aspect ratio.")
             
@@ -174,6 +169,7 @@ def show_kisekae_ui():
                 st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
                 st.session_state.wardrobe_task = f"Strictly apply design from IMAGE 2. {cloth_detail}."
                 
+                # Step 2: 4枚生成
                 id_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
                 for i in range(4):
                     status.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
@@ -183,7 +179,7 @@ def show_kisekae_ui():
                     progress.progress((i+1)/4)
                 status.empty(); st.rerun()
 
-        # 生成結果の表示
+        # 生成結果
         if any(img is not None for img in st.session_state.generated_images):
             cols = st.columns(2)
             for i in range(4):
@@ -205,5 +201,4 @@ def show_kisekae_ui():
                                         st.rerun()
 
     elif menu == "👕 洋服制作君":
-        st.header("👕 洋服制作君 ver3.0")
-        st.info("洋服制作モード：素材やテクスチャに特化した生成ロジックをここに展開可能です。")
+        st.info("洋服制作モード：ここに専用のUIロジックを配置可能です。")
