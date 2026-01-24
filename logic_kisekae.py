@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (変更なし) ---
+# --- 1. 定義データ (v3.0 固定データ) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -38,8 +38,8 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
+# 修正：タイトル重複を削除
 LOCATION_EXAMPLES = """
-【コピー用例文】
 ・街角のオープンカフェ
 ・洗練された並木道
 ・お洒落なセレクトショップ
@@ -49,7 +49,7 @@ LOCATION_EXAMPLES = """
 ・地元の小さな商店街
 """
 
-# --- 2. 生成エンジン (持ち物制御ロジック注入) ---
+# --- 2. 生成エンジン ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
     for attempt in range(max_retries + 1):
         try:
@@ -73,9 +73,7 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, identity_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
     cat_info = CATEGORIES[cat_key]
-    
-    # 持ち物制御: カバンを禁止し、記載されたアイテムのみを許可する指示を追加
-    item_control = "DO NOT add any handbags, purses, or bags. Keep hands empty unless a specific item is mentioned in WARDROBE or RENDER."
+    item_control = "DO NOT add any handbags, purses, or bags. Keep hands empty unless a specific item is mentioned."
 
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
@@ -97,106 +95,113 @@ def show_kisekae_ui():
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    st.header("✨ AI KISEKAE Classic (v2.94-Fixed)")
-    
+    # サイドバーのメニュー構成（修正版）
     with st.sidebar:
-        # 1. キャスト (IMAGE 1)
-        src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
-        if src_img:
-            st.session_state.source_bytes = src_img.getvalue()
-            st.image(src_img, use_container_width=True)
+        # メニュー選択（ラベルを空に、表記を変更）
+        menu = st.selectbox("", ["✨ AI KISEKAE", "👕 洋服制作君"])
         
-        st.divider()
-
-        # 2. 衣装 (IMAGE 2)
-        ref_img = st.file_uploader("衣装 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
-        if ref_img:
-            st.session_state.ref_bytes = ref_img.getvalue()
-            st.image(ref_img, use_container_width=True)
-
-        st.divider()
-
-        # 3. カテゴリー
-        cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
-
-        # 4. 衣装詳細
-        cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、シャンパングラスを持つ")
-
-        st.divider()
-
-        # 5. 髪型
-        hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
-
-        # 6. 髪色
-        hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
-
-        st.divider()
-
-        # 7. ロケーション
-        st.subheader("📍 ロケーション")
-        bg_text = st.text_input("場所を入力", "高級ホテル")
-        time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
-        st.caption("【コピー用例文】")
-        st.text(LOCATION_EXAMPLES)
-
-        st.divider()
-
-        # 8. 生成比率
-        pose_pattern = st.radio("生成比率", ["立ち3:座り1", "立ち2:座り2"])
-        
-        st.divider()
-        
-        run_btn = st.button("✨ 4枚一括生成", type="primary")
-
-    # --- 生成処理 ---
-    if run_btn and st.session_state.source_bytes:
-        st.session_state.generated_images = [None] * 4
-        time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden sunset", "夜 (Night)": "night lights"}
-        st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
-        
-        if pose_pattern == "立ち3:座り1":
-            poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
-        else:
-            poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
-        random.shuffle(poses)
-        st.session_state.current_pose_texts = poses
-
-        status = st.empty(); progress = st.progress(0)
-        status.info("🕒 アンカー抽出中...")
-        
-        contents = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')] if st.session_state.ref_bytes else []
-        res_data = generate_with_retry(client, contents, f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. 1:1 aspect ratio.")
-        
-        if isinstance(res_data, bytes):
-            st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
-            st.session_state.wardrobe_task = f"Strictly apply design from IMAGE 2. {cloth_detail}."
+        if menu == "✨ AI KISEKAE":
+            st.divider()
+            # 1. キャスト
+            src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
+            if src_img:
+                st.session_state.source_bytes = src_img.getvalue()
+                st.image(src_img, use_container_width=True)
             
-            id_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
-            for i in range(4):
-                status.info(f"🎨 生成中 ({i+1}/4)...")
-                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], id_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
-                if isinstance(res, bytes):
-                    st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
-                progress.progress((i+1)/4)
-            status.empty(); st.rerun()
+            st.divider()
 
-    # --- 表示エリア ---
-    if any(img is not None for img in st.session_state.generated_images):
-        cols = st.columns(2)
-        for i in range(4):
-            with cols[i % 2]:
-                img = st.session_state.generated_images[i]
-                if img:
-                    st.image(img, use_container_width=True)
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        buf = io.BytesIO(); img.save(buf, format="JPEG")
-                        st.download_button("💾 保存", buf.getvalue(), f"img_{i+1}.jpg", "image/jpeg", key=f"dl_{i}")
-                    with c2:
-                        if st.button("🔄 撮り直し", key=f"re_{i}"):
-                            with st.spinner("再生成中..."):
-                                id_p = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
-                                res = generate_image_by_text(client, st.session_state.current_pose_texts[i], id_p, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
-                                if isinstance(res, bytes):
-                                    st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
-                                    st.rerun()
+            # 2. 衣装
+            ref_img = st.file_uploader("衣装 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
+            if ref_img:
+                st.session_state.ref_bytes = ref_img.getvalue()
+                st.image(ref_img, use_container_width=True)
+
+            st.divider()
+
+            # 3 & 4. カテゴリーと詳細
+            cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
+            cloth_detail = st.text_input("衣装詳細", placeholder="例：黒サテン、シャンパングラスを持つ")
+
+            st.divider()
+
+            # 5 & 6. 髪型
+            hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
+            hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
+
+            st.divider()
+
+            # 7. ロケーション（修正：デフォルト空白、グレーアウト例設定）
+            st.subheader("📍 ロケーション")
+            bg_text = st.text_input("場所を入力", value="", placeholder="街角のオープンカフェ")
+            time_of_day = st.radio("時間帯", ["昼 (Daylight)", "夕方 (Golden Hour)", "夜 (Night)"])
+            
+            st.caption("【コピー用例文】") # 1つに統合
+            st.text(LOCATION_EXAMPLES)
+
+            st.divider()
+
+            # 8. 生成比率
+            pose_pattern = st.radio("生成比率", ["立ち3:座り1", "立ち2:座り2"])
+            
+            st.divider()
+            
+            run_btn = st.button("✨ 4枚一括生成", type="primary")
+
+    # --- メイン画面表示・生成処理 ---
+    st.header(menu)
+
+    if menu == "✨ AI KISEKAE":
+        if run_btn and st.session_state.source_bytes:
+            st.session_state.generated_images = [None] * 4
+            time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden sunset", "夜 (Night)": "night lights"}
+            st.session_state.final_bg_prompt = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
+            
+            if pose_pattern == "立ち3:座り1":
+                poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
+            else:
+                poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
+            random.shuffle(poses)
+            st.session_state.current_pose_texts = poses
+
+            status = st.empty(); progress = st.progress(0)
+            status.info("🕒 アンカー抽出中...")
+            
+            contents = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')] if st.session_state.ref_bytes else []
+            res_data = generate_with_retry(client, contents, f"Professional product shot of {CATEGORIES[cloth_main]['en']}. {cloth_detail}. 1:1 aspect ratio.")
+            
+            if isinstance(res_data, bytes):
+                st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
+                st.session_state.wardrobe_task = f"Strictly apply design from IMAGE 2. {cloth_detail}."
+                
+                id_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
+                for i in range(4):
+                    status.info(f"🎨 生成中 ({i+1}/4)...")
+                    res = generate_image_by_text(client, st.session_state.current_pose_texts[i], id_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
+                    if isinstance(res, bytes):
+                        st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+                    progress.progress((i+1)/4)
+                status.empty(); st.rerun()
+
+        # 表示エリア
+        if any(img is not None for img in st.session_state.generated_images):
+            cols = st.columns(2)
+            for i in range(4):
+                with cols[i % 2]:
+                    img = st.session_state.generated_images[i]
+                    if img:
+                        st.image(img, use_container_width=True)
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            buf = io.BytesIO(); img.save(buf, format="JPEG")
+                            st.download_button("💾 保存", buf.getvalue(), f"img_{i+1}.jpg", "image/jpeg", key=f"dl_{i}")
+                        with c2:
+                            if st.button("🔄 撮り直し", key=f"re_{i}"):
+                                with st.spinner("再生成中..."):
+                                    id_p = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
+                                    res = generate_image_by_text(client, st.session_state.current_pose_texts[i], id_p, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg_prompt, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
+                                    if isinstance(res, bytes):
+                                        st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
+                                        st.rerun()
+
+    elif menu == "👕 洋服制作君":
+        st.info("洋服制作モード：ここに専用のUIロジックを配置します。")
