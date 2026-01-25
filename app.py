@@ -1,6 +1,6 @@
 import streamlit as st
 import logic_kisekae
-import logic_flatlay
+# logic_flatlay がある場合はここに追加
 
 # --- 基本設定 ---
 st.set_page_config(
@@ -26,11 +26,11 @@ def check_password():
             st.error("😕 Password incorrect")
     return False
 
-# --- メイン処理 (v3.0 メニュー一本化) ---
+# --- メイン処理 ---
 if check_password():
-    # ラベルを空にし、表示を消すことで二重化を防止
+    # サイドバー最上部の唯一のメニュー
     mode = st.sidebar.radio(
-        "", 
+        "機能選択", 
         ["✨ AI KISEKAE", "👕 洋服制作君"], 
         index=0,
         label_visibility="collapsed"
@@ -40,5 +40,5 @@ if check_password():
     if mode == "✨ AI KISEKAE":
         logic_kisekae.show_kisekae_ui()
     else:
-        # 以前の logic_flatlay を呼び出し
-        logic_flatlay.show_flatlay_ui()
+        st.header("👕 洋服制作君 ver3.1")
+        st.info("洋服アンカー制作ロジックをここに展開可能です。")
