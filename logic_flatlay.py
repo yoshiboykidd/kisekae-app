@@ -5,92 +5,104 @@ from PIL import Image
 import io
 import time
 
-# --- 1. 定数定義 (v2.66: 幾何学的整合性と左右対称性の強化) ---
-VERSION = "2.66"
-FLAT_LAY_PROMPT_BASE = (
-    "A technical, high-resolution fashion flat lay. Direct top-down view. "
-    "STRICT STRUCTURAL FIDELITY: The garment must maintain a perfect, symmetrical silhouette. "
-    "Centrally aligned on a pristine white background. Zero lens distortion. "
-    "High-key studio lighting that defines the edges and seams clearly. "
-    "8k resolution. Photorealistic material. "
-    "NEGATIVE RULE: No distortions, no warped edges, no humans, no bags, no overlapping objects."
-)
+# --- 1. 定義データ (アパレル用語による検閲回避) ---
+FLATLAY_CATEGORIES = {
+    "1. 私服 (Daily)": "Casual everyday Japanese fashion",
+    "2. 水着 (Resort)": "High-end stylish resort swimwear",
+    "3. 部屋着 (Lounge)": "Elegant silk night-fashion, satin slip", # 検閲回避表現 [cite: 2026-01-16]
+    "4. オフィス (Business)": "Elegant business professional attire",
+    "5. 夜の装い (Formal)": "Sophisticated evening gown"
+}
 
-def show_flatlay_ui():
-    st.header(f"👕 洋服アンカー制作 (v{VERSION})")
-    st.info("『左右対称スキャン』により、カバンで隠れた部分の形を幾何学的に復元します。")
+# --- 2. 生成エンジン (テクスチャ特化型) ---
+def generate_flatlay_anchor(client, contents, detail_text, category_en):
+    # 手ぶら原則：余計な小物を排除 [cite: 2026-01-16]
+    item_control = "DO NOT add any handbags, purses, or bags. No accessories unless specified."
     
-    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    # 黄金律：デザインと質感の固定 [cite: 2026-01-16]
+    prompt = (
+        f"CRITICAL: PROFESSIONAL APPAREL CATALOG PHOTOGRAPHY.\n"
+        f"1. PRODUCT: {category_en}. {detail_text}.\n"
+        f"2. VIEW: Clean flat-lay or studio mannequin shot, centered, 1:1 aspect ratio.\n"
+        f"3. TEXTURE: High-detail material texture, realistic fabric draping, 8k resolution.\n"
+        f"4. CLEANLINESS: Solid neutral background, no clutter, {item_control}."
+    )
+    
+    # リトライ機能付き生成 [cite: 2026-01-16]
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3-pro-image-preview',
+                contents=contents + [prompt],
+                config=types.GenerateContentConfig(
+                    response_modalities=['IMAGE'],
+                    safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')]
+                )
+            )
+            if response.candidates and response.candidates[0].content.parts:
+                return response.candidates[0].content.parts[0].inline_data.data
+        except:
+            time.sleep(2)
+            continue
+    return None
 
-    if "flat_ref_bytes" not in st.session_state: 
-        st.session_state.flat_ref_bytes = None
+# --- 3. UI メイン処理 ---
+def show_flatlay_ui():
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    
+    # セッション管理
+    if "flatlay_image" not in st.session_state: st.session_state.flatlay_image = None
+    if "ref_image_flat" not in st.session_state: st.session_state.ref_image_flat = None
+
+    st.header("👕 洋服制作君 ver3.1")
+    st.info("着せ替え用の高品質な「衣装アンカー（設計図）」を生成します。")
 
     with st.sidebar:
-        st.header("📸 構造復元設定")
-        ref_img = st.file_uploader("元の衣装画像", type=['png', 'jpg', 'jpeg'], key="f_src")
-        
+        # 参考画像（IMAGE 2）のアップロード
+        ref_img = st.file_uploader("参考にする服 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="f_ref")
         if ref_img:
-            st.session_state.flat_ref_bytes = ref_img.getvalue()
-            st.image(ref_img, caption="解析対象", use_container_width=True)
-        
-        st.divider()
-        keep_items = st.text_input("🟢 残すもの", value="白いニットワンピース、薄茶色のブーツ")
-        remove_items = st.text_input("🔴 完全に消すもの", value="茶色のカバン")
-        
-        st.divider()
-        run_btn = st.button("🚀 幾何学構造を復元して生成", type="primary")
+            st.session_state.ref_image_flat = ref_img.getvalue()
+            st.image(ref_img, use_container_width=True, caption="参考画像")
 
-    if run_btn and st.session_state.flat_ref_bytes:
-        col1, col2 = st.columns(2)
+        st.divider()
         
+        # 設定項目
+        cat_key = st.selectbox("カテゴリー", list(FLATLAY_CATEGORIES.keys()))
+        f_detail = st.text_input("衣装の具体的特徴", placeholder="例：光沢のあるサテン生地、胸元に細かな刺繍")
+        
+        st.divider()
+        run_f_btn = st.button("👕 洋服アンカーを生成", type="primary")
+
+    # --- メイン生成ロジック ---
+    if run_f_btn:
+        status = st.empty()
+        status.info("🕒 衣装のデザインと質感を解析して生成中...")
+        
+        # 参考画像がある場合は含める
+        contents = []
+        if st.session_state.ref_image_flat:
+            contents.append(types.Part.from_bytes(data=st.session_state.ref_image_flat, mime_type='image/jpeg'))
+        
+        res = generate_flatlay_anchor(client, contents, f_detail, FLATLAY_CATEGORIES[cat_key])
+        
+        if res:
+            st.session_state.flatlay_image = Image.open(io.BytesIO(res))
+            status.empty()
+            st.rerun()
+        else:
+            status.error("生成に失敗しました。リトライしてください。")
+
+    # --- 結果表示 ---
+    if st.session_state.flatlay_image:
+        col1, col2 = st.columns([2, 1])
         with col1:
-            st.subheader("1. 幾何学スキャン（骨格抽出）")
-            with st.spinner("シルエットの左右対称性を計算中..."):
-                try:
-                    input_img_part = types.Part.from_bytes(data=st.session_state.flat_ref_bytes, mime_type='image/jpeg')
-                    
-                    # 【重要】解析プロンプト：幾何学的な「設計図」を定義させる
-                    analysis_prompt = (
-                        f"Identify the '{keep_items}' in the image while ignoring the '{remove_items}'. "
-                        f"CRITICAL TASK: Based on the visible parts of the '{keep_items}', reconstruct its full GEOMETRIC STRUCTURE. "
-                        f"Apply SYMMETRY: If one side is hidden by '{remove_items}', mirror the visible side's shape, sleeve length, and neckline. "
-                        f"Describe the garment as a 'Technical Blueprint': defining the exact hemline, shoulder width, and cuff shape. "
-                        "Output only the structural specifications."
-                    )
-                    
-                    analysis_res = client.models.generate_content(model='gemini-2.0-flash', contents=[analysis_prompt, input_img_part])
-                    clothing_desc = analysis_res.text
-                    
-                    with st.expander("復元された骨格データ"):
-                        st.write(clothing_desc)
-                except Exception as e:
-                    st.error(f"解析エラー: {e}")
-                    return
-
+            st.image(st.session_state.flatlay_image, use_container_width=True, caption="生成された洋服アンカー")
+        
         with col2:
-            st.subheader("2. 構造固定されたアンカー")
-            with st.spinner("骨格データに基づき再描画中..."):
-                # 【重要】生成プロンプト：「対称性の維持」と「歪みの排除」を徹底
-                final_gen_prompt = (
-                    f"{FLAT_LAY_PROMPT_BASE} \n"
-                    f"OBJECTIVE: Render a perfectly symmetrical {keep_items}. \n"
-                    f"STRUCTURAL LOCK: Replicate the hemline and neckline exactly as described. \n"
-                    f"SYMMETRY MIRRORING: Ensure the left and right sides are balanced and identical in shape. \n"
-                    f"DETAILS: {clothing_desc}"
-                )
-                
-                try:
-                    gen_response = client.models.generate_image(
-                        model='imagen-4.0-generate-001',
-                        prompt=final_gen_prompt,
-                        config=types.GenerateImageConfig(aspect_ratio="3:4", output_mime_type='image/png')
-                    )
-
-                    if gen_response.generated_images:
-                        img_bytes = gen_response.generated_images[0].image.image_bytes
-                        st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
-                        st.download_button("💾 構造固定アンカーを保存", img_bytes, f"fixed_anchor_{int(time.time())}.png", "image/png")
-                    else:
-                        st.error("生成失敗")
-                except Exception as e:
-                    st.error(f"生成エラー: {str(e)}")
+            st.success("✅ アンカー生成完了")
+            st.write("この画像を「IMAGE 2」として着せ替えツールで使用することで、デザインの再現性が高まります。")
+            
+            # 保存ボタン
+            buf = io.BytesIO()
+            st.session_state.flatlay_image.save(buf, format="PNG")
+            st.download_button("💾 画像を保存", buf.getvalue(), "clothing_anchor.png", "image/png")
