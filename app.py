@@ -1,14 +1,15 @@
 import streamlit as st
 import logic_kisekae
+import logic_flatlay  # 先ほど作成したファイルをインポート
 
-# --- 基本設定 ---
+# --- 1. 基本設定 ---
 st.set_page_config(
     page_title="AI KISEKAE Manager Pro v3.1",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- パスワード認証 ---
+# --- 2. パスワード認証 ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -25,19 +26,20 @@ def check_password():
             st.error("😕 Password incorrect")
     return False
 
-# --- メイン処理 ---
+# --- 3. メイン処理 ---
 if check_password():
-    # サイドバー最上部の唯一のメニュー
+    # サイドバーのメニュー：ここで全ての切り替えを管理します
     mode = st.sidebar.radio(
         "機能選択", 
         ["✨ AI KISEKAE", "👕 洋服制作君"], 
         index=0,
-        label_visibility="collapsed"
+        label_visibility="collapsed" # ラベルを隠してUIをスッキリさせます
     )
     st.sidebar.divider()
 
     if mode == "✨ AI KISEKAE":
+        # 着せ替えロジックを起動
         logic_kisekae.show_kisekae_ui()
     else:
-        st.header("👕 洋服制作君 ver3.1")
-        st.info("洋服アンカー制作ロジックをここに展開可能です。")
+        # 洋服制作ロジックを起動（ここが仮置きから本番コードに変わりました）
+        logic_flatlay.show_flatlay_ui()
