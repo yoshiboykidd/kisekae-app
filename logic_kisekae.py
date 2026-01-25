@@ -6,8 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (v3.2 黄金律 & 洗練ポーズ) ---
-# 対象は全て日本人女性 [cite: 2025-12-30]
+# --- 1. 定義データ (v3.1：日本人女性・黄金律・直立なし) ---
 HAIR_STYLES = {
     "元画像のまま": "original hairstyle from IMAGE 1",
     "ゆるふあ巻き": "soft loose wavy curls",
@@ -28,7 +27,7 @@ HAIR_COLORS = {
     "ハニーブロンド": "bright honey blonde hair color"
 }
 
-# 立ちポーズ：カタログ感を抑え、動きのある構成 (自然な直立は排除)
+# 立ちポーズ：自然な直立を除去し、動きのある構成
 STAND_PROMPTS = [
     "Full body, leaning against a wall", 
     "Full body, walking slowly", 
@@ -50,7 +49,7 @@ SIT_PROMPTS = [
     "Full body, sitting on a high stool, one leg down"  
 ]
 
-# カテゴリー：アパレル用語を使用し検閲を回避 [cite: 2026-01-16]
+# カテゴリー：検閲を避けるためアパレル用語を使用
 CATEGORIES = {
     "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin"},
     "2. 水着（リゾート）": {"en": "High-end stylish resort swimwear", "back_prompt": "healthy skin glow"},
@@ -61,7 +60,7 @@ CATEGORIES = {
 
 LOCATION_EXAMPLES = "・街角 of Open Cafe\n・洗練された並木道\n・お洒落なセレクトショップ\n・ルーフトップテラス\n・都会を一望するバーカウンター\n・住宅街の静かな公園\n・地元の小さな商店街"
 
-# --- 2. 生成エンジン (Identity & Body Lock) ---
+# --- 2. 生成エンジン (ABSOLUTE FACIAL & BODY LOCK) ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
     for attempt in range(max_retries + 1):
         try:
@@ -83,17 +82,17 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, id_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
     cat_info = CATEGORIES[cat_key]
-    # 手ぶら原則（カバン禁止）[cite: 2026-01-16]
+    # 手ぶら原則（カバン禁止）
     item_control = "DO NOT add any handbags, purses, or bags. Keep hands empty unless a specific item is mentioned."
 
     prompt = (
-        f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK [cite: 2026-01-16].\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match, skeletal, eye, nose, mouth match [cite: 2026-01-16].\n"
+        f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match, skeletal, eye, nose, mouth match.\n"
         f"2. HAIR: Style: {hair_style_en}, Color: {hair_color_en}.\n"
-        f"3. PHYSICAL: ABSOLUTE BODY VOLUME LOCK. Match IMAGE 1 volume and shoulder width exactly [cite: 2026-01-16].\n"
+        f"3. PHYSICAL: ABSOLUTE BODY VOLUME LOCK. Match IMAGE 1 volume and shoulder width exactly.\n"
         f"4. POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio. {item_control}\n"
         f"5. WARDROBE: {wardrobe_task}\n"
-        f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression [cite: 2026-01-16]."
+        f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
     )
     return generate_with_retry(client, [id_part, anchor_part], prompt)
 
@@ -107,28 +106,26 @@ def show_kisekae_ui():
     if "anchor_part" not in st.session_state: st.session_state.anchor_part = None
     if "current_poses" not in st.session_state: st.session_state.current_poses = []
 
-    st.header("✨ AI KISEKAE ツール ver3.2")
+    st.header("✨ AI KISEKAE ツール ver3.1")
 
     with st.sidebar:
-        # キャスト・衣装アップローダー
+        # キャスト画像アップロード
         src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
         if src_img:
             st.session_state.source_bytes = src_img.getvalue()
             st.image(src_img, use_container_width=True)
         
         st.divider()
+        # 衣装画像アップロード
         ref_img = st.file_uploader("衣装 (IMAGE 2)", type=['png', 'jpg', 'jpeg'], key="k_ref")
         if ref_img:
             st.session_state.ref_bytes = ref_img.getvalue()
             st.image(ref_img, use_container_width=True)
 
         st.divider()
-        # カテゴリーと詳細設定
+        # 設定項目
         cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
         cloth_detail = st.text_input("衣装詳細", placeholder="例：サテンシャツ、グラスを持つ")
-        
-        # v3.2 カラー指定（上書き）
-        color_overwrite = st.text_input("🎨 カラー指定 (上書き)", placeholder="例：Midnight Blue, Red, Ivory")
 
         st.divider()
         hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
@@ -150,7 +147,7 @@ def show_kisekae_ui():
         time_mods = {"昼 (Daylight)": "bright daylight", "夕方 (Golden Hour)": "golden sunset", "夜 (Night)": "night lights"}
         st.session_state.final_bg = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
         
-        # 重複なしポーズ選定 (random.sample) [cite: 2026-01-16]
+        # 重複なしポーズ選定
         if pose_pattern == "立ち3:座り1":
             st.session_state.current_poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
         else:
@@ -159,7 +156,7 @@ def show_kisekae_ui():
 
         status = st.empty(); progress = st.progress(0)
         
-        # Step 1: 衣装アンカー作成 (デザインを固定) [cite: 2026-01-16]
+        # Step 1: 衣装アンカー作成 (日本人女性対象)
         status.info("🕒 Step 1/2: 衣装デザイン抽出中...")
         ref_content = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')]
         anchor_prompt = f"Professional clothing photography. Capture the exact silhouette and texture of the item in IMAGE 2. {cloth_detail}. Neutral background."
@@ -167,12 +164,9 @@ def show_kisekae_ui():
         
         if isinstance(res_data, bytes):
             st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
+            st.session_state.wardrobe_task = f"Strictly apply the design from the clothing anchor. {cloth_detail}."
             
-            # v3.2 カラー指定の反映
-            color_task = f" Change color to {color_overwrite}." if color_overwrite else ""
-            st.session_state.wardrobe_task = f"Strictly apply the design from the clothing anchor. {cloth_detail}.{color_task}"
-            
-            # Step 2: メイン生成 (Identity Lock)
+            # Step 2: メイン生成 (顔と体型を固定)
             id_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
             for i in range(4):
                 status.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
