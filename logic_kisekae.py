@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (v3.14) ---
+# --- 1. 定義データ (v3.15：例文復旧) ---
 HAIR_STYLES = {"元画像のまま": "original hairstyle from IMAGE 1", "ゆるふあ巻き": "soft loose wavy curls", "ハーフアップ": "elegant half-up style", "ツインテール": "playful twin tails", "ポニーテール": "neat ponytail", "まとめ髪": "sophisticated updo bun", "ストレート": "sleek long straight hair"}
 HAIR_COLORS = {"元画像のまま": "original hair color from IMAGE 1", "ナチュラルブラック": "natural black hair", "ダークブラウン": "deep dark brown hair", "ashベージュ": "ash beige hair color", "ミルクティーグレージュ": "soft milk-tea greige hair color", "ピンクブラウン": "pinkish brown hair color", "ハニーブロンド": "bright honey blonde hair color"}
 
@@ -20,6 +20,9 @@ CATEGORIES = {
     "4. オフィス（スーツ）": {"en": "Business professional", "back_prompt": "sharp lighting"},
     "5. 夜の装い（ドレス）": {"en": "Luxury evening fashion", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
+
+# 消えていたロケーション例文を復旧
+LOCATION_EXAMPLES = "・街角 of Open Cafe\n・洗練された並木道\n・お洒落なセレクトショップ\n・ルーフトップテラス\n・都会を一望するバーカウンター\n・住宅街の静かな公園\n・地元の小さな商店街"
 
 # --- 2. 生成エンジン ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
@@ -69,7 +72,7 @@ def show_kisekae_ui():
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    st.header("✨ AI KISEKAE ツール ver3.14")
+    st.header("✨ AI KISEKAE ツール ver3.15")
 
     with st.sidebar:
         src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
@@ -83,15 +86,18 @@ def show_kisekae_ui():
         hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
         hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
         st.divider()
-        bg_text = st.text_input("場所", value="", placeholder="街角のオープンカフェ")
-        time_of_day = st.radio("時間", ["昼", "夕方", "夜"])
+        st.subheader("📍 ロケーション")
+        bg_text = st.text_input("場所を入力", value="", placeholder="街角のオープンカフェ")
+        time_of_day = st.radio("時間帯", ["昼", "夕方", "夜"])
+        # ロケーション例文をここに再配置
+        st.caption("【コピー用例文】")
+        st.text(LOCATION_EXAMPLES)
+        st.divider()
         pose_pattern = st.radio("比率", ["立ち3:座り1", "立ち2:座り2"])
         run_btn = st.button("✨ 4枚一括生成", type="primary")
 
     if run_btn and st.session_state.source_bytes:
-        # 新しい生成を始める前に古い画像を消去
         st.session_state.generated_images = [None] * 4
-        
         time_mods = {"昼": "bright daylight", "夕方": "golden sunset", "夜": "night lights"}
         st.session_state.final_bg = f"{bg_text}, {time_mods[time_of_day]}, portrait bokeh"
         
@@ -109,13 +115,10 @@ def show_kisekae_ui():
         anchor_prompt = f"Professional apparel photography of a high-quality stage outfit. {cloth_detail}. Neutral background."
         res_data = generate_with_retry(client, ref_content, anchor_prompt)
         
-        # --- 判定：Step 1 で失敗したら即座に止める ---
         if not isinstance(res_data, bytes):
             status.error(f"🚫 Step 1で検閲されました: {res_data}")
-            st.info("衣装の詳細説明（単語）を変更するか、別の参考画像を試してください。")
-            st.stop()  # ここでプログラムの実行を完全に停止する
+            st.stop()
         
-        # 成功した場合のみ以下に進む
         st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
         st.session_state.wardrobe_task = f"Strictly apply the design from the clothing anchor. {cloth_detail}."
         
@@ -128,7 +131,10 @@ def show_kisekae_ui():
             if isinstance(res, bytes):
                 st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
             else:
-                st.error(f"枠 {i+1} がブロックされました。")
+                # 枠 1 がブロックされたら即座に終了するロジックを追加
+                status.error(f"🚫 枠 {i+1} がブロックされました。以降の生成を中止します。")
+                st.info("理由: " + str(res))
+                st.stop()
             progress.progress((i+1)/4)
         status.empty(); st.rerun()
 
