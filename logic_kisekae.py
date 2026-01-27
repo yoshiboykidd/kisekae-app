@@ -6,7 +6,7 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (v2.94 準拠：日本人女性・黄金律) ---
+# --- 1. 定義データ (v2.94 魂の継承：日本人女性・黄金律) ---
 HAIR_STYLES = {"元画像のまま": "original hairstyle from IMAGE 1", "ゆるふあ巻き": "soft loose wavy curls", "ハーフアップ": "elegant half-up style", "ツインテール": "playful twin tails", "ポニーテール": "neat ponytail", "まとめ髪": "sophisticated updo bun", "ストレート": "sleek long straight hair"}
 HAIR_COLORS = {"元画像のまま": "original hair color from IMAGE 1", "ナチュラルブラック": "natural black hair", "ダークブラウン": "deep dark brown hair", "ashベージュ": "ash beige hair color", "ミルクティーグレージュ": "soft milk-tea greige hair color", "ピンクブラウン": "pinkish brown hair color", "ハニーブロンド": "bright honey blonde hair color"}
 
@@ -40,6 +40,7 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
+# ロケーション例文
 LOCATION_EXAMPLES = "・街角 of Open Cafe\n・洗練された並木道\n・お洒落なセレクトショップ\n・ルーフトップテラス\n・都会を一望するバーカウンター\n・住宅街の静かな公園\n・地元の小さな商店街"
 
 # --- 2. 生成エンジン (v2.94 ロジック復元 + エラーハンドリング) ---
@@ -62,10 +63,8 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
                 return f"検閲ブロック ({reason})"
             return "AI_REJECTED"
         except Exception as e:
-            # 503 Overloaded のみリトライ
             if "503" in str(e) and attempt < max_retries:
                 time.sleep(2); continue
-            # 1 validation error (IMAGE_OTHER等) をキャッチ
             if "validation error" in str(e).lower() or "IMAGE_OTHER" in str(e):
                 return "検閲ブロック (SYSTEM_FILTER)"
             return f"SYSTEM_ERROR: {str(e)}"
@@ -73,6 +72,7 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, id_part, anchor_part, wardrobe_task, bg_prompt, hair_s, hair_c, cat_key):
     cat_info = CATEGORIES[cat_key]
+    # v2.94 のピュアなプロンプト構成を維持
     prompt = (
         f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK [cite: 2026-01-16].\n"
         f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match, skeletal, eye, nose, mouth match.\n"
@@ -91,7 +91,8 @@ def show_kisekae_ui():
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    st.header("✨ AI KISEKAE ツール ver3.16 (v2.94 Core)")
+    # ヘッダーを 3.16 に固定
+    st.header("✨ AI KISEKAE ツール ver 3.16 (v2.94 Core)")
 
     with st.sidebar:
         src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
@@ -127,7 +128,7 @@ def show_kisekae_ui():
 
         status = st.empty(); progress = st.progress(0)
         
-        # --- Step 1: v2.94 方式デザイン抽出 ---
+        # --- Step 1: デザイン抽出 ---
         status.info("🕒 Step 1/2: 衣装デザイン抽出中...")
         ref_content = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')]
         anchor_prompt = f"Professional clothing photography. Capture the exact silhouette and texture of the item in IMAGE 2. {cloth_detail}. Neutral background."
@@ -149,7 +150,7 @@ def show_kisekae_ui():
             if isinstance(res, bytes):
                 st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
             else:
-                # 枠 1 がブロックされたら即座に終了
+                # ブロック時に即座に止める
                 status.error(f"🚫 枠 {i+1} がブロックされました。以降の生成を中止します。")
                 st.info(f"理由: {res}")
                 st.stop()
