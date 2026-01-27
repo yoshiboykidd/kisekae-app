@@ -6,31 +6,12 @@ import io
 import time
 import random
 
-# --- 1. 定義データ (v2.94 魂の継承：日本人女性・黄金律) ---
+# --- 1. 定義データ (v2.94 魂の継承) ---
 HAIR_STYLES = {"元画像のまま": "original hairstyle from IMAGE 1", "ゆるふあ巻き": "soft loose wavy curls", "ハーフアップ": "elegant half-up style", "ツインテール": "playful twin tails", "ポニーテール": "neat ponytail", "まとめ髪": "sophisticated updo bun", "ストレート": "sleek long straight hair"}
 HAIR_COLORS = {"元画像のまま": "original hair color from IMAGE 1", "ナチュラルブラック": "natural black hair", "ダークブラウン": "deep dark brown hair", "ashベージュ": "ash beige hair color", "ミルクティーグレージュ": "soft milk-tea greige hair color", "ピンクブラウン": "pinkish brown hair color", "ハニーブロンド": "bright honey blonde hair color"}
 
-# 立ちポーズ：直立なし
-STAND_PROMPTS = [
-    "Full body, leaning against a wall", 
-    "Full body, walking slowly", 
-    "Full body, weight on one leg",
-    "Full body, looking over shoulder, slight body turn", 
-    "Full body, gently adjusting hair with one hand",    
-    "Full body, 3/4 view, elegant posture",             
-    "Full body, hands clasped gently in front"           
-]
-
-# 座りポーズ
-SIT_PROMPTS = [
-    "Full body, sitting on sofa", 
-    "Full body, sitting sideways on chair", 
-    "Full body, sitting on steps",
-    "Full body, sitting with legs crossed elegantly",   
-    "Full body, leaning slightly forward on a chair",   
-    "Full body, sitting and looking away slightly",    
-    "Full body, sitting on a high stool, one leg down"  
-]
+STAND_PROMPTS = ["Full body, leaning against a wall", "Full body, walking slowly", "Full body, weight on one leg", "Full body, looking over shoulder, slight body turn", "Full body, gently adjusting hair with one hand", "Full body, 3/4 view, elegant posture", "Full body, hands clasped gently in front"]
+SIT_PROMPTS = ["Full body, sitting on sofa", "Full body, sitting sideways on chair", "Full body, sitting on steps", "Full body, sitting with legs crossed elegantly", "Full body, leaning slightly forward on a chair", "Full body, sitting and looking away slightly", "Full body, sitting on a high stool, one leg down"]
 
 CATEGORIES = {
     "1. 私服（日常）": {"en": "Casual everyday Japanese fashion", "back_prompt": "natural soft skin"},
@@ -40,10 +21,9 @@ CATEGORIES = {
     "5. 夜の装い（ドレス）": {"en": "Sophisticated evening gown", "back_prompt": "luxury bokeh, dramatic lighting"}
 }
 
-# ロケーション例文
 LOCATION_EXAMPLES = "・街角 of Open Cafe\n・洗練された並木道\n・お洒落なセレクトショップ\n・ルーフトップテラス\n・都会を一望するバーカウンター\n・住宅街の静かな公園\n・地元の小さな商店街"
 
-# --- 2. 生成エンジン (v2.94 ロジック復元 + エラーハンドリング) ---
+# --- 2. 生成エンジン ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
     for attempt in range(max_retries + 1):
         try:
@@ -72,12 +52,11 @@ def generate_with_retry(client, contents, prompt, max_retries=2):
 
 def generate_image_by_text(client, pose_text, id_part, anchor_part, wardrobe_task, bg_prompt, hair_s, hair_c, cat_key):
     cat_info = CATEGORIES[cat_key]
-    # v2.94 のピュアなプロンプト構成を維持
     prompt = (
-        f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK [cite: 2026-01-16].\n"
-        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match, skeletal, eye, nose, mouth match.\n"
+        f"CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK.\n"
+        f"1. FACE FIDELITY (IMAGE 1): Replicate EXACT face from IMAGE 1. 100% identity match.\n"
         f"2. HAIR: Style: {hair_s}, Color: {hair_c}.\n"
-        f"3. PHYSICAL: ABSOLUTE BODY VOLUME LOCK. Match IMAGE 1 volume and shoulder width exactly.\n"
+        f"3. PHYSICAL: ABSOLUTE BODY VOLUME LOCK. Match IMAGE 1 volume exactly.\n"
         f"4. POSE: {pose_text}. 85mm portrait. 2:3 aspect ratio. DO NOT add any bags.\n"
         f"5. WARDROBE: {wardrobe_task}\n"
         f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
@@ -91,8 +70,7 @@ def show_kisekae_ui():
     if "source_bytes" not in st.session_state: st.session_state.source_bytes = None
     if "ref_bytes" not in st.session_state: st.session_state.ref_bytes = None
 
-    # ヘッダーを 3.16 に固定
-    st.header("✨ AI KISEKAE ツール ver 3.16 (v2.94 Core)")
+    st.header("✨ AI KISEKAE ツール ver 3.17 (成果表示版)")
 
     with st.sidebar:
         src_img = st.file_uploader("キャスト (IMAGE 1)", type=['png', 'jpg', 'jpeg'], key="k_src")
@@ -102,11 +80,10 @@ def show_kisekae_ui():
         if ref_img: st.session_state.ref_bytes = ref_img.getvalue(); st.image(ref_img, use_container_width=True)
         st.divider()
         cloth_main = st.selectbox("カテゴリー", list(CATEGORIES.keys()))
-        cloth_detail = st.text_input("衣装詳細", placeholder="例: black satin, bow tie")
+        cloth_detail = st.text_input("衣装詳細", placeholder="例: black satin")
         hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()))
         hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()))
         st.divider()
-        st.subheader("📍 ロケーション")
         bg_text = st.text_input("場所", value="", placeholder="街角のオープンカフェ")
         time_of_day = st.radio("時間帯", ["昼", "夕方", "夜"])
         st.caption("【コピー用例文】")
@@ -128,10 +105,10 @@ def show_kisekae_ui():
 
         status = st.empty(); progress = st.progress(0)
         
-        # --- Step 1: デザイン抽出 ---
-        status.info("🕒 Step 1/2: 衣装デザイン抽出中...")
+        # --- Step 1 ---
+        status.info("🕒 Step 1/2: デザイン抽出中...")
         ref_content = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')]
-        anchor_prompt = f"Professional clothing photography. Capture the exact silhouette and texture of the item in IMAGE 2. {cloth_detail}. Neutral background."
+        anchor_prompt = f"Professional clothing photography. {cloth_detail}. Neutral background."
         res_data = generate_with_retry(client, ref_content, anchor_prompt)
         
         if not isinstance(res_data, bytes):
@@ -141,7 +118,7 @@ def show_kisekae_ui():
         st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
         st.session_state.wardrobe_task = f"Strictly apply the design from the clothing anchor. {cloth_detail}."
         
-        # --- Step 2: メイン生成 ---
+        # --- Step 2 ---
         id_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
         for i in range(4):
             status.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
@@ -150,14 +127,16 @@ def show_kisekae_ui():
             if isinstance(res, bytes):
                 st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
             else:
-                # ブロック時に即座に止める
-                status.error(f"🚫 枠 {i+1} がブロックされました。以降の生成を中止します。")
-                st.info(f"理由: {res}")
-                st.stop()
+                # ここで止めるのではなく「中断」してループを抜ける
+                st.warning(f"⚠️ 枠 {i+1} 以降はブロックされました。成功分のみ表示します。")
+                st.sidebar.error(f"ブロック理由: {res}")
+                break # ループを抜ける
             progress.progress((i+1)/4)
-        status.empty(); st.rerun()
+        
+        status.empty()
+        # st.stop() を呼ばず、そのままコード末尾の表示エリアまで流す
 
-    # --- 表示エリア ---
+    # --- 表示エリア (ループの外側にあるので st.stop しなければ必ず実行される) ---
     if any(img is not None for img in st.session_state.generated_images):
         cols = st.columns(2)
         for i in range(4):
