@@ -1,10 +1,11 @@
 import streamlit as st
 import logic_kisekae
-import logic_flatlay  # 先ほど作成したファイルをインポート
+import logic_flatlay
+import logic_dx  # 新しく作成するDX版モジュールをインポート
 
 # --- 1. 基本設定 ---
 st.set_page_config(
-    page_title="AI KISEKAE Manager Pro v3.1",
+    page_title="AI KISEKAE Manager Pro v3.17 DX", # バージョン表記を更新
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -28,18 +29,21 @@ def check_password():
 
 # --- 3. メイン処理 ---
 if check_password():
-    # サイドバーのメニュー：ここで全ての切り替えを管理します
+    # サイドバーのメニュー：DX版の選択肢を追加
     mode = st.sidebar.radio(
         "機能選択", 
-        ["✨ AI KISEKAE", "👕 洋服制作君"], 
+        ["✨ AI KISEKAE", "👕 洋服制作君", "💎 AI KISEKAE DX"], # DX版を追加
         index=0,
-        label_visibility="collapsed" # ラベルを隠してUIをスッキリさせます
+        label_visibility="collapsed" 
     )
     st.sidebar.divider()
 
     if mode == "✨ AI KISEKAE":
-        # 着せ替えロジックを起動
+        # 通常の着せ替えロジック (Gemini版)
         logic_kisekae.show_kisekae_ui()
-    else:
-        # 洋服制作ロジックを起動（ここが仮置きから本番コードに変わりました）
+    elif mode == "👕 洋服制作君":
+        # 洋服制作ロジック
         logic_flatlay.show_flatlay_ui()
+    else:
+        # 💎 DX版ロジック (Fal.ai版) を起動
+        logic_dx.show_dx_ui()
