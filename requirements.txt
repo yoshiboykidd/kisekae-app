@@ -1,5 +1,5 @@
-google-genai==0.6.0
 streamlit
+google-genai
+fal-client
 Pillow
-opencv-python-headless
-numpy
+requests
