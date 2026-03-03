@@ -6,7 +6,7 @@ import random
 import os
 from PIL import Image
 
-# --- 1. 定義データ (日本人女性・実写ポーズ特化) ---
+# --- 1. 定義データ (ポーズ：日本人女性・実写特化) ---
 STAND_PROMPTS = [
     "Full body, leaning against a wall", "Full body, walking slowly", 
     "Full body, weight on one leg", "Full body, looking over shoulder, slight body turn", 
@@ -18,35 +18,27 @@ SIT_PROMPTS = [
     "Full body, sitting on a high stool, one leg down"
 ]
 
-# --- 2. 共通プロンプト生成エンジン (黄金律の強化移植) ---
+# --- 2. 共通プロンプト生成エンジン (黄金律の移植) ---
 def get_dx_prompt(pose_text, wardrobe_detail):
-    """顔と体型を死守し、イラスト感を排除するためのプロンプト構成"""
-    # 黄金律：顔の同一性と体積の固定
+    """顔と体型を同時に死守し、イラスト感を排除する [cite: 2026-01-16]"""
+    # 黄金律：顔の同一性と体積の固定 [cite: 2026-01-16]
     identity_prefix = (
-        "CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK. "
-        "STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK. "
-        "Replicate EXACT face and body mass from IMAGE 1. 100% identity match. "
-        "Do not beautify or thin the body. Maintain original curves and shoulder width. "
+        "CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK [cite: 2026-01-16]. "
+        "STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK [cite: 2026-01-16]. "
+        "Replicate EXACT face and body mass from IMAGE 1. 100% identity match [cite: 2026-01-16]. "
+        "Do not beautify or thin the body. Maintain original curves and shoulder width [cite: 2026-01-16]. "
     )
-    
-    # 着衣の強制：露出過多を防ぐための素材指定
-    clothing_fix = (
-        f"WARDROBE: {wardrobe_detail}, solid non-transparent fabric, "
-        "opaque material, detailed garment construction, realistic clothing folds. "
-    )
-
-    # 実写特化：カメラ機材と肌の質感（イラスト感の排除）
+    # 実写特化：イラスト感を消すための機材・質感指定 [cite: 2025-12-30, 2026-01-16]
     render_suffix = (
-        "Subject is a Japanese woman. "
-        "Hyper-realistic photography, shot on Sony A7R IV, 85mm lens, f/1.8, "
+        f"Subject is a Japanese woman [cite: 2025-12-30]. "
+        "Hyper-realistic photography, shot on Sony A7R IV, 35mm lens, f/2.8, "
         "highly detailed natural skin texture with visible pores and slight imperfections, "
-        "soft facial fill-light, cinematic lighting, neutral expression, 8k photo, film grain."
+        "soft facial fill-light, cinematic lighting, neutral expression, 8k photo, film grain [cite: 2026-01-16]."
     )
-    
-    return f"{identity_prefix} POSE: {pose_text}. {clothing_fix} {render_suffix}"
+    return f"{identity_prefix} POSE: {pose_text}. WARDROBE: {wardrobe_detail}. {render_suffix}"
 
 def call_fal_api(face_url, prompt, id_weight, g_scale, steps):
-    """Fal.ai APIを叩く実務関数 (パラメータ制御版)"""
+    """Fal.ai APIを叩く実務関数 (3つのパラメータを渡す)"""
     return fal_client.subscribe(
         "fal-ai/flux-pulid",
         arguments={
@@ -55,7 +47,7 @@ def call_fal_api(face_url, prompt, id_weight, g_scale, steps):
             "id_weight": id_weight,
             "num_inference_steps": steps,
             "guidance_scale": g_scale,
-            "enable_safety_checker": False, # DX版：検閲オフ
+            "enable_safety_checker": False, # DX版：検閲オフ [cite: 2026-03-01]
             "image_size": "portrait_4_3"
         }
     )
@@ -68,13 +60,12 @@ def show_dx_ui():
     
     os.environ["FAL_KEY"] = st.secrets["FAL_KEY"]
 
-    # セッション状態の初期化
     if "dx_images" not in st.session_state: st.session_state.dx_images = [None] * 4
     if "dx_poses" not in st.session_state: st.session_state.dx_poses = [None] * 4
     if "dx_src_bytes" not in st.session_state: st.session_state.dx_src_bytes = None
 
     st.header("💎 AI KISEKAE DX ver 3.17")
-    st.caption("【DX仕様】検閲解除・PuLID顔体型固定・実写特化レシピ")
+    st.caption("【DX仕様】検閲解除・PuLID顔体型固定・実写特化 [cite: 2026-01-16]")
 
     with st.sidebar:
         st.subheader("🖼️ ソース")
@@ -85,20 +76,20 @@ def show_dx_ui():
         
         st.divider()
         st.subheader("👗 衣装設定")
-        cloth_detail = st.text_area("詳細 (English)", placeholder="例: black satin corset bodysuit", height=80)
+        cloth_detail = st.text_area("詳細 (English)", placeholder="例: black silk camisole", height=80)
         
         st.divider()
         st.subheader("⚙️ パラメータ調整")
-        id_weight = st.slider("顔の固定強度 (ID Weight)", 0.0, 1.0, 0.82, help="高いほど顔が似ますが、1.0はイラスト感が出やすくなります。")
-        g_scale = st.slider("命令遵守度 (Guidance Scale)", 1.0, 10.0, 3.5, help="低いほど実写らしくなり、高いほど衣装指示を厳守します。3.0-4.0推奨。")
-        steps = st.slider("描き込み回数 (Steps)", 20, 50, 30, help="多いほど肌の質感などが精緻になります。")
+        # ★ここがスライダー3連装の部分です
+        id_weight = st.slider("顔の固定強度 (ID Weight)", 0.0, 1.0, 0.82)
+        g_scale = st.slider("命令遵守度 (Guidance Scale)", 1.0, 10.0, 3.5)
+        steps = st.slider("描き込み回数 (Steps)", 20, 50, 30)
         
         st.divider()
         pose_pattern = st.radio("比率", ["立ち3:座り1", "立ち2:座り2"])
         run_btn = st.button("🚀 DX 4枚一括生成", type="primary")
 
     if run_btn and st.session_state.dx_src_bytes:
-        # 初期化
         st.session_state.dx_images = [None] * 4
         if pose_pattern == "立ち3:座り1":
             st.session_state.dx_poses = random.sample(STAND_PROMPTS, 3) + random.sample(SIT_PROMPTS, 1)
@@ -117,11 +108,12 @@ def show_dx_ui():
                 prompt = get_dx_prompt(st.session_state.dx_poses[i], cloth_detail)
                 
                 try:
+                    # パラメータをAPIに渡す
                     result = call_fal_api(face_url, prompt, id_weight, g_scale, steps)
                     image_url = result['images'][0]['url']
                     st.session_state.dx_images[i] = Image.open(requests.get(image_url, stream=True).raw)
                 except Exception as inner_e:
-                    st.warning(f"⚠️ 枠 {i+1} でエラー発生。")
+                    st.warning(f"⚠️ 枠 {i+1} で中断。")
                     st.sidebar.error(f"DXエラー: {str(inner_e)}")
                     break
                 progress.progress((i+1)/4)
@@ -129,7 +121,7 @@ def show_dx_ui():
         except Exception as e:
             st.error(f"🚫 システムエラー: {str(e)}")
 
-    # --- 表示エリア ---
+    # 表示エリア
     if any(img is not None for img in st.session_state.dx_images):
         cols = st.columns(2)
         for i in range(4):
@@ -144,9 +136,8 @@ def show_dx_ui():
                         with st.spinner("DX再生成中..."):
                             try:
                                 face_u = fal_client.upload(st.session_state.dx_src_bytes, "image/jpeg")
-                                prompt = get_dx_prompt(st.session_state.dx_poses[i], cloth_detail)
-                                result = call_fal_api(face_u, prompt, id_weight, g_scale, steps)
-                                st.session_state.dx_images[i] = Image.open(requests.get(result['images'][0]['url'], stream=True).raw)
+                                pr = get_dx_prompt(st.session_state.dx_poses[i], cloth_detail)
+                                res = call_fal_api(face_u, pr, id_weight, g_scale, steps)
+                                st.session_state.dx_images[i] = Image.open(requests.get(res['images'][0]['url'], stream=True).raw)
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"再生成失敗: {str(e)}")
+                            except Exception as e: st.error(f"失敗: {str(e)}")
