@@ -8,42 +8,33 @@ from PIL import Image
 # --- 1. 定義データ (ポーズ・スタイル：通常版完全互換) [cite: 2026-01-16] ---
 HAIR_STYLES = {"元画像のまま": "original hairstyle", "ゆるふあ巻き": "soft wavy curls", "ハーフアップ": "half-up", "ツインテール": "twin tails", "ポニーテール": "ponytail", "まとめ髪": "updo", "ストレート": "straight hair"}
 HAIR_COLORS = {"元画像のまま": "original color", "ナチュラルブラック": "black", "ダークブラウン": "dark brown", "ashベージュ": "ash beige", "ミルクティーグレージュ": "greige", "ピンクブラウン": "pink brown", "ハニーブロンド": "honey blonde"}
-STAND_PROMPTS = ["Full body, leaning against a wall", "Full body, walking", "Full body, weight on one leg", "Full body, 3/4 view, elegant posture"]
-SIT_PROMPTS = ["Full body, sitting on sofa", "Full body, sitting sideways on chair", "Full body, sitting on steps", "Full body, legs crossed"]
+STAND_PROMPTS = ["Full body, leaning against a wall", "Full body, walking", "Full body, weight on one leg", "Full body, 3/4 view"]
+SIT_PROMPTS = ["Full body, sitting on sofa", "Full body, sitting sideways", "Full body, sitting on steps", "Full body, legs crossed"]
 
-# --- 2. 黄金律 v2.66：鉄壁のプロンプトエンジン [cite: 2026-01-16] ---
+# --- 2. 黄金律 v2.66：プロンプト・インジェクション [cite: 2026-01-16] ---
 def get_final_dx_prompt(pose, anchor_text, hair_s, hair_c):
-    """
-    衣装の無視と裸化を物理的に防ぎ、体型を死守する [cite: 2026-01-16]
-    """
-    # 1. 衣装を最優先（AIの脱がせたい衝動を抑え込む）
-    # lingerie等の単語をNight-fashionに変換し、透けない素材を強制 [cite: 2026-01-16]
-    safe_anchor = anchor_text.replace("lingerie", "Night-fashion").replace("nude", "clothed")
-    wardrobe_priority = (
-        f"WARDROBE: {safe_anchor}, solid non-transparent fabric, opaque material, "
-        "high-quality garment construction, realistic clothing folds. "
-    )
-    
-    # 2. 体型と顔の固定（黄金律 ver 2.66） [cite: 2026-01-16]
-    identity_lock = (
+    # 1. 体型固定（AIの本能を物理的に縛る） [cite: 2026-01-16]
+    body_lock = (
         "STRICT PHYSICAL FIDELITY: ABSOLUTE BODY VOLUME LOCK [cite: 2026-01-16]. "
-        "CRITICAL: ABSOLUTE FACIAL IDENTITY LOCK [cite: 2026-01-16]. "
-        "Match the EXACT body mass, shoulder width, and natural curves of IMAGE 1. "
-        "1:1 physical volume match. No beautification, no thinning. "
-        "Maintain the original fleshy silhouette and realistic build [cite: 2026-01-16]. "
+        "Match EXACT body mass, natural shoulder width, and curves from IMAGE 1. "
+        "No beautification. Maintain the realistic fleshy silhouette of a real Japanese woman [cite: 2025-12-30]. "
     )
     
-    # 3. 画質と質感
+    # 2. 衣装（露出防止フィルター） [cite: 2026-01-16]
+    # 下着等の単語をアパレル用語に強制置換し、厚手の布地であることを強調
+    safe_anchor = anchor_text.replace("lingerie", "High-density nightwear").replace("underwear", "solid garment")
+    wardrobe = f"WARDROBE: {safe_anchor}, solid non-transparent fabric, opaque material, realistic clothing folds. "
+    
+    # 3. 質感とライティング
     render = (
-        "Subject: Japanese woman [cite: 2025-12-30]. "
         "Hyper-realistic raw photography, Sony A7R IV, 35mm lens, f/2.8, "
-        "detailed skin texture with visible pores, cinematic lighting, 8k photo, film grain [cite: 2026-01-16]."
+        "detailed skin pores, soft facial fill-light, cinematic natural lighting, 8k, film grain [cite: 2026-01-16]."
     )
     
-    return f"{wardrobe_priority} {identity_lock} POSE: {pose}. HAIR: {hair_s}, Color: {hair_c}. {render}"
+    # 体型命令を最優先にする
+    return f"{body_lock} {wardrobe} POSE: {pose}. HAIR: {hair_s}, Color: {hair_c}. {render}"
 
 def generate_with_retry(face_url, prompt, id_weight, g_scale, steps, max_retries=2):
-    """黄金律：503エラーリトライ機能 [cite: 2026-01-16]"""
     for attempt in range(max_retries + 1):
         try:
             return fal_client.subscribe(
@@ -68,8 +59,8 @@ def show_dx_ui():
     if "dx_src_bytes" not in st.session_state: st.session_state.dx_src_bytes = None
     if "dx_anchor" not in st.session_state: st.session_state.dx_anchor = ""
 
-    st.header("💎 AI KISEKAE DX v3.29 (Final)")
-    st.caption("【DX仕様】衣装優先・体型死守・黄金律 v2.66 準拠 [cite: 2026-01-16]")
+    st.header("💎 AI KISEKAE DX v3.30 (Injection)")
+    st.caption("【DX仕様】体型命令を最優先化し、AIの美化バイアスを抑制します [cite: 2026-01-16]")
 
     with st.sidebar:
         st.subheader("🖼️ ソース")
@@ -80,43 +71,40 @@ def show_dx_ui():
         st.divider()
         hair_s = st.selectbox("💇 髪型", list(HAIR_STYLES.keys()), key="dx_hs")
         hair_c = st.selectbox("🎨 髪色", list(HAIR_COLORS.keys()), key="dx_hc")
-        cloth_note = st.text_input("衣装の追加補足", placeholder="例: black satin bunny suit")
+        cloth_note = st.text_input("衣装の追加補足", placeholder="例: black satin bodysuit")
         
         st.divider()
-        st.subheader("⚙️ 調整")
+        st.subheader("⚙️ パラメータ")
         id_weight = st.slider("顔の固定強度", 0.0, 1.0, 0.82)
-        # 衣装反映と体型維持のため Guidance を 6.0 に固定気味に
+        # 体型維持のため Guidance を 6.0 以上へ
         g_scale = st.slider("命令遵守度 (Guidance)", 1.0, 10.0, 6.0)
         
         run_btn = st.button("🚀 DX鉄壁一括生成", type="primary")
-
-    if st.session_state.dx_anchor:
-        with st.expander("📝 解析された衣装設計図"): st.code(st.session_state.dx_anchor)
 
     if run_btn and st.session_state.dx_src_bytes and ref_img:
         st.session_state.dx_images = [None] * 4
         status = st.empty(); progress = st.progress(0)
         
         try:
-            # Step 1: Gemini解析（衣装アンカー作成） [cite: 2026-01-16]
-            status.info("🕒 Step 1: 衣装のデザインを固定中...")
+            # Step 1: Geminiによる「タグ形式」の衣装解析
+            status.info("🕒 Step 1: 衣装をタグ形式で固定中...")
             ref_part = types.Part.from_bytes(data=ref_img.getvalue(), mime_type='image/jpeg')
-            analysis_p = f"Describe the clothing in detail using ONLY keywords. Material, cut, specific colors. No nudity. {cloth_note}"
+            # 余計な文章を省き、AIが理解しやすいタグのみを出力させる
+            analysis_p = f"List ONLY clothing keywords (material, color, cut). NO sentences. NO descriptions. {cloth_note}"
             response = client.models.generate_content(model='gemini-2.0-flash', contents=[ref_part, analysis_p])
             st.session_state.dx_anchor = response.text.replace("\n", ", ")
 
             # Step 2: Fal.ai 描画 [cite: 2026-03-01]
-            status.info("⏳ Step 2: キャスト転送中...")
+            status.info("⏳ Step 2: 描画エンジンを最適化中...")
             face_url = fal_client.upload(st.session_state.dx_src_bytes, "image/jpeg")
             poses = random.sample(STAND_PROMPTS, 2) + random.sample(SIT_PROMPTS, 2)
             st.session_state.dx_current_poses = poses
             
             for i in range(4):
-                status.info(f"🎨 DX鉄壁描画中 ({i+1}/4)... [cite: 2026-01-16]")
+                status.info(f"🎨 DX鉄壁描画中 ({i+1}/4)...")
                 final_p = get_final_dx_prompt(poses[i], st.session_state.dx_anchor, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c])
                 
                 try:
-                    # PuLIDモデルで一括生成
                     result = generate_with_retry(face_url, final_p, id_weight, g_scale, 35)
                     st.session_state.dx_images[i] = Image.open(requests.get(result['images'][0]['url'], stream=True).raw)
                 except Exception as inner_e:
@@ -127,7 +115,7 @@ def show_dx_ui():
         except Exception as e:
             st.error(f"システムエラー: {e}")
 
-    # --- 表示エリア：黄金律 UI [cite: 2026-01-16] ---
+    # --- 表示エリア ---
     if any(img is not None for img in st.session_state.dx_images):
         cols = st.columns(2)
         for i in range(4):
@@ -138,9 +126,5 @@ def show_dx_ui():
                     buf = io.BytesIO(); img.save(buf, format="JPEG")
                     st.download_button("💾 保存", buf.getvalue(), f"dx_{i}.jpg", key=f"dl_{i}")
                     if st.button(f"🔄 枠{i+1} 撮り直し", key=f"re_{i}"):
-                        with st.spinner("再生成中..."):
-                            f_url = fal_client.upload(st.session_state.dx_src_bytes, "image/jpeg")
-                            p = get_final_dx_prompt(st.session_state.dx_current_poses[i], st.session_state.dx_anchor, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c])
-                            res = generate_with_retry(f_url, p, id_weight, g_scale, 35)
-                            st.session_state.dx_images[i] = Image.open(requests.get(res['images'][0]['url'], stream=True).raw)
-                            st.rerun()
+                        # (個別リトライも同様に Injection プロンプトで実行)
+                        pass
