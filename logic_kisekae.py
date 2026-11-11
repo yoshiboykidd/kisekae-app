@@ -5,6 +5,7 @@ from PIL import Image
 import io
 import time
 import random
+from gemini_image import generate_image
 
 # --- 1. 定義データ (日本人女性・黄金律・直立なし) ---
 HAIR_STYLES = {
@@ -61,36 +62,7 @@ LOCATION_EXAMPLES = "・街角 of Open Cafe\n・洗練された並木道\n・お
 
 # --- 2. 生成エンジン (エラーログ & リトライ機能) ---
 def generate_with_retry(client, contents, prompt, max_retries=2):
-    for attempt in range(max_retries + 1):
-        try:
-            response = client.models.generate_content(
-                model='gemini-3-pro-image-preview',
-                contents=contents + [prompt],
-                config=types.GenerateContentConfig(
-                    response_modalities=['IMAGE'],
-                    safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')]
-                )
-            )
-            # 正常に画像が生成された場合
-            if response.candidates and response.candidates[0].content.parts:
-                return response.candidates[0].content.parts[0].inline_data.data
-            
-            # ブロックされた場合の理由取得
-            candidate = response.candidates[0]
-            reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
-            return f"検閲ブロック ({reason}): 衣装や表現が制限に触れました。"
-
-        except Exception as e:
-            # 503エラー（混雑）時はリトライ
-            if "503" in str(e) and attempt < max_retries:
-                time.sleep(2)
-                continue
-            # その他のエラー（検閲等）はそのままログを返す
-            error_msg = str(e)
-            if "validation error" in error_msg.lower() or "IMAGE_OTHER" in error_msg:
-                return "検閲ブロック (SYSTEM_FILTER): AIが画像を拒絶しました。"
-            return f"SYSTEM_ERROR: {error_msg}"
-    return "FAILED"
+    return generate_image(client, contents, prompt, max_retries=max_retries)
 
 def generate_image_by_text(client, pose_text, id_part, anchor_part, wardrobe_task, bg_prompt, hair_style_en, hair_color_en, cat_key):
     cat_info = CATEGORIES[cat_key]
@@ -105,7 +77,7 @@ def generate_image_by_text(client, pose_text, id_part, anchor_part, wardrobe_tas
         f"5. WARDROBE: {wardrobe_task}\n"
         f"6. RENDER: {bg_prompt}, {cat_info['back_prompt']}, soft facial fill-light, 8k, neutral expression."
     )
-    return generate_with_retry(client, [id_part, anchor_part], prompt)
+    return generate_with_retry(client, [part for part in (id_part, anchor_part) if part is not None], prompt)
 
 # --- 3. UI メイン処理 ---
 def show_kisekae_ui():
@@ -165,19 +137,23 @@ def show_kisekae_ui():
         
         # --- Step 1: アンカー作成 ---
         status.info("🕒 Step 1/2: 衣装デザイン抽出中...")
-        ref_content = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type='image/jpeg')]
-        anchor_prompt = f"Professional clothing photography. Capture the exact silhouette and texture of the item in IMAGE 2. {cloth_detail}. Neutral background."
-        res_data = generate_with_retry(client, ref_content, anchor_prompt)
-        
-        if not isinstance(res_data, bytes):
-            status.error(f"🚫 Step 1で失敗しました: {res_data}")
-            st.stop() # ここで完全に止める
-        
-        st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type='image/png')
-        st.session_state.wardrobe_task = f"Strictly apply the design from the clothing anchor. {cloth_detail}."
+        st.session_state.anchor_part = None
+        if st.session_state.ref_bytes:
+            ref_content = [types.Part.from_bytes(data=st.session_state.ref_bytes, mime_type="image/png" if st.session_state.ref_bytes.startswith(b"\x89PNG") else "image/jpeg")]
+            anchor_prompt = f"Professional clothing photography. Capture the exact silhouette and texture of the item in IMAGE 2. {cloth_detail}. Neutral background."
+            res_data = generate_with_retry(client, ref_content, anchor_prompt)
+            if isinstance(res_data, bytes):
+                st.session_state.anchor_part = types.Part.from_bytes(data=res_data, mime_type="image/png" if res_data.startswith(b"\x89PNG") else "image/jpeg")
+            else:
+                st.warning(f"衣装画像の解析に失敗しました。テキスト指定で続行します: {res_data}")
+        st.session_state.wardrobe_task = (
+            f"Strictly apply the design from the clothing anchor. {cloth_detail}."
+            if st.session_state.anchor_part is not None
+            else f"{CATEGORIES[cloth_main]['en']}. {cloth_detail}."
+        )
         
         # --- Step 2: メイン生成 ---
-        id_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
+        id_part = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type="image/png" if st.session_state.source_bytes.startswith(b"\x89PNG") else "image/jpeg")
         for i in range(4):
             status.info(f"🎨 Step 2/2: 生成中 ({i+1}/4)...")
             res = generate_image_by_text(client, st.session_state.current_poses[i], id_part, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
@@ -185,9 +161,9 @@ def show_kisekae_ui():
             if isinstance(res, bytes):
                 st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
             else:
-                status.error(f"🚫 枠 {i+1} でブロックされました。以降の生成を中止します。")
+                status.error(f"🚫 枠 {i+1} の生成に失敗しました。")
                 st.info(f"理由: {res}")
-                st.stop() # ブロックされた時点で即座に止める
+                continue # ほかの枠の生成は継続する
             progress.progress((i+1)/4)
             
         status.empty(); st.rerun()
@@ -204,7 +180,7 @@ def show_kisekae_ui():
                     st.download_button("💾 保存", buf.getvalue(), f"v3_img_{i}.jpg", "image/jpeg", key=f"dl_v3_{i}")
                     if st.button("🔄 撮り直し", key=f"re_v3_{i}"):
                         with st.spinner("再生成中..."):
-                            id_p = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type='image/jpeg')
+                            id_p = types.Part.from_bytes(data=st.session_state.source_bytes, mime_type="image/png" if st.session_state.source_bytes.startswith(b"\x89PNG") else "image/jpeg")
                             res = generate_image_by_text(client, st.session_state.current_poses[i], id_p, st.session_state.anchor_part, st.session_state.wardrobe_task, st.session_state.final_bg, HAIR_STYLES[hair_s], HAIR_COLORS[hair_c], cloth_main)
                             if isinstance(res, bytes):
                                 st.session_state.generated_images[i] = Image.open(io.BytesIO(res)).resize((600, 900))
