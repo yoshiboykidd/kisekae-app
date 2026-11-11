@@ -3,7 +3,7 @@ from google import genai
 from google.genai import types
 from PIL import Image
 import io
-import time
+from gemini_image import generate_image
 
 # --- 1. 定義データ (アパレル用語による検閲回避) ---
 FLATLAY_CATEGORIES = {
@@ -16,35 +16,15 @@ FLATLAY_CATEGORIES = {
 
 # --- 2. 生成エンジン (テクスチャ特化型) ---
 def generate_flatlay_anchor(client, contents, detail_text, category_en):
-    # 手ぶら原則：余計な小物を排除 [cite: 2026-01-16]
     item_control = "DO NOT add any handbags, purses, or bags. No accessories unless specified."
-    
-    # 黄金律：デザインと質感の固定 [cite: 2026-01-16]
     prompt = (
-        f"CRITICAL: PROFESSIONAL APPAREL CATALOG PHOTOGRAPHY.\n"
-        f"1. PRODUCT: {category_en}. {detail_text}.\n"
-        f"2. VIEW: Clean flat-lay or studio mannequin shot, centered, 1:1 aspect ratio.\n"
-        f"3. TEXTURE: High-detail material texture, realistic fabric draping, 8k resolution.\n"
+        f"CRITICAL: PROFESSIONAL APPAREL CATALOG PHOTOGRAPHY.\\n"
+        f"1. PRODUCT: {category_en}. {detail_text}.\\n"
+        f"2. VIEW: Clean flat-lay or studio mannequin shot, centered, 1:1 aspect ratio.\\n"
+        f"3. TEXTURE: High-detail material texture, realistic fabric draping, 8k resolution.\\n"
         f"4. CLEANLINESS: Solid neutral background, no clutter, {item_control}."
     )
-    
-    # リトライ機能付き生成 [cite: 2026-01-16]
-    for attempt in range(3):
-        try:
-            response = client.models.generate_content(
-                model='gemini-3-pro-image-preview',
-                contents=contents + [prompt],
-                config=types.GenerateContentConfig(
-                    response_modalities=['IMAGE'],
-                    safety_settings=[types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE')]
-                )
-            )
-            if response.candidates and response.candidates[0].content.parts:
-                return response.candidates[0].content.parts[0].inline_data.data
-        except:
-            time.sleep(2)
-            continue
-    return None
+    return generate_image(client, contents, prompt, aspect_ratio="1:1")
 
 # --- 3. UI メイン処理 ---
 def show_flatlay_ui():
@@ -81,16 +61,16 @@ def show_flatlay_ui():
         # 参考画像がある場合は含める
         contents = []
         if st.session_state.ref_image_flat:
-            contents.append(types.Part.from_bytes(data=st.session_state.ref_image_flat, mime_type='image/jpeg'))
+            contents.append(types.Part.from_bytes(data=st.session_state.ref_image_flat, mime_type='image/png' if st.session_state.ref_image_flat.startswith(b'\\x89PNG') else 'image/jpeg'))
         
         res = generate_flatlay_anchor(client, contents, f_detail, FLATLAY_CATEGORIES[cat_key])
         
-        if res:
+        if isinstance(res, bytes):
             st.session_state.flatlay_image = Image.open(io.BytesIO(res))
             status.empty()
             st.rerun()
         else:
-            status.error("生成に失敗しました。リトライしてください。")
+            status.error(f"生成に失敗しました: {res}")
 
     # --- 結果表示 ---
     if st.session_state.flatlay_image:
